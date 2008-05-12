@@ -1,0 +1,123 @@
+This script implements distributed bug tracking for Git repositories.  It
+replicates the functionality of packages like ticgit, but does so in the form
+of a more standalone Python script.  You can check this script in along with
+your project in order to ensure that all contributors are able to view the bug
+database using the same version of the script that you used to create them.
+
+USAGE:
+
+$ git issue new [-m "Comment for the issue"] "Issue title"
+$ git issue list      # show all issues
+$ git issue send      # send new issues and changes to the maintainer
+$ git issue close ID  # mark an issue as closed
+
+DATA STRUCTURES:
+
+The data for `git-issues` is kept in a separate branch named `issues`.  The
+user is never intended to checkout this branch, it's used solely for record
+keeping by the `git-issues` script.
+
+If you were to checkout this branch, you'd find a set of top-level
+directories, each giving the first two characters of a Git object name (hash
+id).  This mirrors the way that loose objects are organized within
+`.git/objects`.  In each of these directories will be another set of
+directories, this time spelling out the remaining 38 characters of each
+issue's unique object name.  No matter what is done with an issue, this
+reference to it never changes.
+
+In each each uniquely named issue directory may be found one or more files of
+the following form:
+
+  info
+
+      The info file is unchanging after an issue is created, and it's the
+      contents of this file which identify the object name of the issue.  It
+      contains three lines:
+
+      1. A numerical timestamp indicating when the issue was created.
+
+      2. The name and e-mail address of the person who created the issue with
+         git-issues.  This is not necessarily the original submitter of the
+         issue, nor is it necessarily the person the issue is assigned to.  In
+         fact, this person may have no meaningful connection with the issue at
+         all, they are simply the original author of its title.
+
+      3. The issue's original title.
+
+      At any point in the future there may be a new title or author assigned
+      to an issue, but these three original details are kept as the
+      "signature" of the issue itself and are left unchanged.
+
+  state
+
+      This file contains a series of keys and values (in the form of "Key:
+      Value"), which indicate the current state of the issue.  Any of these
+      are editable, and it is these details which get displayed to the user
+      through the various `git-issues` commands:
+
+        Title
+        Summary
+        Description
+        Author         Who wrote the actual issue record
+        Reporter       Who reported this issue
+        Owner          Who is responsible for closure
+        Assigned       Who is it presently assigned to
+        Cc             Who else wants to know about it
+        Status         new, open, pending, deferred, closed
+        Resolution     fixed, wontfix, dup
+        Type           defect, feature, docs
+        Component
+        Version
+        Milestone
+        Severity       blocker, critical, major, minor, cosmetic
+        Priority       high, med, low
+        Tags
+
+  [HASH].comment
+
+      A comment is a note attached to an issue.  It cannot be changed,
+      although it can be deleted and superceded by a revised version.  It has
+      the following layout:
+
+      1. The first line is a timestamp indicating when the comment was made.
+
+      2. The second line is the name and e-mail of the author of the comment,
+         just like the `info` file above.
+
+      3. The third line is a comma-separated list of attachments hashes
+         associated with this comment, or a blank line if none.
+
+      4. The fourth and remaining lines of the file make up the body of the
+         comment.  If the comment has no body at all (if this is just an
+         attached, then there is no fourth line).
+
+  [HASH].attach
+
+      An attachment is a text or binary file which has been linked to an
+      issue.  It's name is the same as the blob that records its contents.
+      There must always be one or more comments that refer to the attachment,
+      otherwise the system is free to delete it.
+
+Also, at the top-level of the `issues` branch is a file which contains
+information relating to the whole project.  The file is named `project` and
+contains the following key values pairs in the form of "Key: Value".  Most
+keys can repeat in order to specify multiple values:
+
+  Status: KEYWORD
+  Resolution: KEYWORD
+  Type: KEYWORD
+  Component: TITLE = NAME <E-MAIL>
+  Version: TAG
+  Milestone: NAME
+  Severity: KEYWORD
+  Priority: KEYWORD
+
+Each of these key/value pairs identifies a legal value for the given field.
+Only the "Tags" field is freely assignable to any value; all other fields must
+match one of the settings in the `project` file.
+
+The Component field can have a default "Owner".  This is the person who gets
+notified of your issue when they pull the new issue down from the public
+repository.
+
+Lastly, the Version field must match an existing tag name.

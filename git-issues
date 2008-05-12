@@ -1,0 +1,219 @@
+#!/usr/bin/env python
+
+# git-issue, version 0.1
+#
+# by John Wiegley <johnw@newartisans.com>
+
+import sys
+import os
+import re
+import string
+import optparse
+
+from datetime   import datetime
+from subprocess import Popen, PIPE
+from os.path    import isdir, join
+
+######################################################################
+
+options = None
+
+######################################################################
+
+# Utility function for calling out to Git (this script does not try to
+# be a Git library, just an interface to the underlying commands).  It
+# supports a 'restart' keyword, which will cause a Python function to
+# be called on failure.  If that function returns True, the same
+# command will be attempted again.  This can avoid costly checks to
+# make sure a branch exists, for example, by simply failing on the
+# first attempt to use it and then allowing the restart function to
+# create it.
+
+def git(cmd, *args, **kwargs):
+    restart = True
+    while restart:
+        stdin_mode = None
+        if kwargs.has_key('input'):
+            stdin_mode = PIPE
+
+        if options.verbose:
+            print "Command: git-%s %s" % (cmd, string.join(args, ' '))
+            if kwargs.has_key('input'):
+                print "Input: <<EOF"
+                print kwargs['input'],
+                print "EOF"
+
+        proc = Popen(('git-' + cmd,) + args, stdin = stdin_mode,
+                     stdout = PIPE, stderr = PIPE)
+
+        if kwargs.has_key('input'):
+            proc.stdin.write(kwargs['input'])
+            proc.stdin.close()
+
+        returncode = proc.wait()
+        restart = False
+        if returncode != 0:
+            if kwargs.has_key('restart'):
+                if kwargs['restart'](cmd, args, kwargs):
+                    restart = True
+            else:
+                if not kwargs.has_key('no_stderr') and proc.stderr:
+                    sys.stderr.write(proc.stderr.read())
+                raise Exception("Could not complete call: git-%s %s" %
+                                (cmd, args))
+
+    if not kwargs.has_key('ignore_output'):
+        return proc.stdout.read()[:-1]
+
+def create_issue_branch(cmd, args, kwargs):
+    """If an issues branch already exists at the remote, we simply
+    refer to it from now on.  Otherwise, we create a dummy commit in
+    order get things started."""
+    try:
+        hash = git('rev-parse', 'origin/issues', no_stderr = True)
+    except:
+        hash = git('hash-object', '-w', '--stdin',
+                   input = "Created issues branch\n")
+        hash = git('mktree', input = "100644 blob %s\tstart" % hash)
+        hash = git('commit-tree', hash, input = "Created issues branch")
+
+    git('branch', 'issues', hash)
+    return True
+
+def create_issue(title, creator):
+    """Create a new issue in the tracking database by building a
+    commit object that holds a reference to a unique blob describing
+    the issue.  Its uniqueness is determined by hashing the time of
+    creation, the creator's name and e-mail address, and the title of
+    the issues.  The issue is then kept under a sub-directory of the
+    same name within the issues branch, in a fashion similar to
+    `.git/objects`."""
+    global issues_HEAD
+
+    # Create a unique blob to represent the new issue.  This is the
+    # issue's official object name from now on, and will never change.
+    blob = git('hash-object', '-w', '--stdin',
+               input = "%s\n%s\n%s\n" % (datetime.now().strftime('%s'),
+                                         creator, title))
+    tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
+
+    # Merge this blob with existing issue blobs that share the same
+    # first two hash digits
+    ls_tree = git('ls-tree', '-r', issues_HEAD, '--', blob[:2])
+    ls_tree = re.sub('\t%s/' % blob[:2], '\t', ls_tree)
+    if ls_tree: ls_tree += '\n'
+
+    tree = git('mktree', input = (ls_tree +
+                                  "040000 tree %s\t%s\n" % (tree, blob[2:])))
+
+    # Merge it into the tree of issues overall
+    ls_tree = git('ls-tree', issues_HEAD)
+    ls_tree = re.sub('040000 tree [0-9a-f]{40}\t%s\n' % blob[:2], '', ls_tree)
+    if ls_tree: ls_tree += '\n'
+
+    tree = git('mktree', input = (ls_tree +
+                                  "040000 tree %s\t%s\n" % (tree, blob[:2])))
+
+    # Commit the merged tree (though at this moment it's a dangling commit)
+    commit = git('commit-tree', tree, '-p', issues_HEAD, input = title)
+
+    # Update the HEAD of the issues branch to point to the commit we
+    # just made.
+    git('update-ref', 'refs/heads/issues', commit, issues_HEAD)
+
+    # Reset the `issues_HEAD` global variable, then return the object
+    # name of the new issue.
+    issues_HEAD = commit
+    return blob
+
+class issue_names_iter:
+    """This is an iterator class to return the object names of all
+    known issues."""
+    ls_tree = None
+
+    def __init__(self):
+        self.ls_tree = string.split(git('ls-tree', '-r', issues_HEAD), '\n')
+
+    def __iter__(self):
+        return self
+
+    def next(self):
+        if not self.ls_tree:
+            raise StopIteration
+
+        match = re.match('100644 blob ([0-9a-f]{40})\t(start|([0-9a-f]{2})/([0-9a-f]{38})/info)',
+                         self.ls_tree[0])
+        assert match
+
+        if match.group(2) == 'start':
+            raise StopIteration
+
+        hash = match.group(1)
+        assert hash == match.group(3) + match.group(4)
+
+        self.ls_tree = self.ls_tree[1:]
+
+        return hash
+
+######################################################################
+
+parser = optparse.OptionParser()
+parser.add_option("-v", "--verbose",
+                  action  = "store_true",
+                  dest    = "verbose",
+                  default = False,
+                  help    = "report activity options.verbosely")
+
+(options, args) = parser.parse_args()
+
+######################################################################
+
+issues_HEAD = git('rev-parse', 'issues', restart = create_issue_branch)
+
+#GIT_DIR    = git('rev-parse', '--git-dir')
+#issue_DIR  = join(GIT_DIR, "issues")
+#
+#if not isdir(issue_DIR):
+#    os.mkdir(issue_DIR)
+
+if len(args) == 0:
+    print "Show help here."
+    sys.exit(1)
+
+command = args[0]
+args    = args[1:]
+
+if command == "list":
+    print "   #    Id     Title                   State  Date  Assign  Tags"
+    print "-------------------------------------------------------------------------------"
+    index = 1
+    for hash in issue_names_iter():
+        info = string.split(git('cat-file', 'blob', hash), '\n')
+        when = datetime.fromtimestamp(long(info[0]))
+        print "%4d  %s  %-23s %-6s %5s %6s %s" % \
+            (index, hash[:7], info[2], 'open', when.strftime('%m/%d'),
+             info[1][:6], '')
+        index += 1
+
+elif command == "show":
+    if len(args) == 0:
+        print "Shows needs an index or Id."
+    try:
+        idx = int(args[0])
+        for hash in issue_names_iter():
+            if idx == 1:
+                break
+            idx -= 1
+    except:
+        hash = args[0]
+
+    print git('cat-file', 'blob', hash)
+
+elif command == "new":
+    if len(args) == 0:
+        print "New needs a title."
+    head = create_issue(args[0], "%s <%s>" % (git('config', 'user.name'),
+                                              git('config', 'user.email')))
+    print "New issue %s created." % head
+
+# git-issue ends here
