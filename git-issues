@@ -19,7 +19,7 @@ from os.path    import isdir, isfile, join
 ######################################################################
 
 options       = None
-cache_version = 3
+cache_version = 4
 
 ######################################################################
 
@@ -69,6 +69,14 @@ class Issue:
         self.created     = None
         self.modified    = None
 
+    def show(self, fd = sys.stdout):
+        fd.write("""
+Title:   %s
+Author:  %s
+Created: %s
+
+""" % (self.title, self.author, self.created))
+
 class IssueSet:
     """An IssueSet refers to a group of issues.  There is always at least one
     IssueSet that refers to all of the issues which exist in a repository.
@@ -87,7 +95,7 @@ class IssueSet:
         self.milestones  = []
         self.severities  = []
         self.priorities  = []
-        self.issues      = []
+        self.issues      = {}
         self.issues_HEAD = None
         self.dirty       = False
 
@@ -118,30 +126,58 @@ class IssueSet:
     def issues_cache_file(self):
         pass
 
-def read_issues_cache(issueSet):
+def load_issues(issueSet):
+    """Given a newly created IssueSet object as a template, see if we can
+    restore the cached version of the data from disk, and then check whether
+    it's still valid.  This can _greatly_ speed up subsequent list and show
+    operations.
+
+    The reason why a newly created template exists is to abstract
+    DVCS-specific behavior, such as the location of the cache file.
+
+    Thus, a typical session looks like this:
+
+      issueSet = GitIssueSet()   # or whichever DVCS backend you use
+
+      if ... looking at issues list is required ...:
+          issueSet = load_issues(issueSet)
+
+          ... use the issue data ..."""
     cache_file = issueSet.issues_cache_file()
     if isfile(cache_file):
         fd = open(cache_file, 'rb')
         if options.verbose:
             print "Cache: Loading saved issues data"
-        cachedIssueSet = cPickle.load(fd)
+        try:
+            cachedIssueSet = cPickle.load(fd)
+        finally:
+            fd.close()
+
         if cachedIssueSet.cache_version == issueSet.cache_version and \
            cachedIssueSet.head() == issueSet.current_head():
             if options.verbose:
                 print "Cache: It's valid and we're using it"
             return cachedIssueSet
+
         if options.verbose:
             print "Cache: It's no longer valid, throwing it away"
+
     issueSet.read_issues()      # can't use cache, read from disk
+
     return issueSet
 
-def write_issues_cache(issueSet):
+def save_issues(issueSet):
+    """Write an IssueSet to disk in object form, for fast loading on the next
+    iteration.  This is only done if there are actual changes to write."""
     if not issueSet.dirty:
         return
+
     cache_file = issueSet.issues_cache_file()
     cache_file_dir = os.path.dirname(cache_file)
+
     if not isdir(cache_file_dir):
         os.makedirs(cache_file_dir)
+
     fd = open(cache_file, 'wb')
     try:
         cPickle.dump(issueSet, fd)
@@ -289,7 +325,7 @@ class GitIssueSet(IssueSet):
     def read_issues(self):
         ls_tree = string.split(git('ls-tree', '-r', self.head()), '\n')
 
-        self.issues = []        # clear any existing data
+        self.issues = {}        # clear any existing data
 
         for line in ls_tree:
             match = re.match('100644 blob ([0-9a-f]{40})\t(project|([0-9a-f]{2})/([0-9a-f]{38})/info)',
@@ -302,7 +338,7 @@ class GitIssueSet(IssueSet):
             hash = match.group(1)
             assert hash == match.group(3) + match.group(4)
 
-            self.issues.append(self.read_issue(hash))
+            self.issues[hash] = self.read_issue(hash)
 
         IssueSet.read_issues(self) # set the dirty bit
 
@@ -334,32 +370,41 @@ args    = args[1:]
 issueSet = GitIssueSet()
 
 if command == "list":
-    issueSet = read_issues_cache(issueSet)
+    issueSet = load_issues(issueSet)
 
     print "   #    Id     Title                   State  Date  Assign  Tags"
     print "-------------------------------------------------------------------------------"
     index = 1
-    for issue in issueSet.issues:
+    for name in issueSet.issues.keys():
+        issue = issueSet.issues[name]
         print "%4d  %s  %-23s %-6s %5s %6s %s" % \
             (index, issue.name[:7], issue.title, issue.status,
              issue.created.strftime('%m/%d'), str(issue.author)[:6], '')
         index += 1
 
-    write_issues_cache(issueSet)
+    save_issues(issueSet)
 
 elif command == "show":
     if len(args) == 0:
         print "Shows needs an index or Id."
-    #try:
-    #    idx = int(args[0])
-    #    for hash in issue_names_iter():
-    #        if idx == 1:
-    #            break
-    #        idx -= 1
-    #except:
-    #    hash = args[0]
-    #
-    #print git('cat-file', 'blob', hash)
+
+    issueSet = load_issues(issueSet)
+
+    issue = None
+    try:
+        idx = int(args[0])
+        issue = issueSet.issues[issueSet.issues.keys()[idx]]
+    except:
+        for name in issueSet.issues.keys():
+            if re.match(args[0], name):
+                issue = issueSet.issues[name]
+                break
+
+    if issue:
+        issue.show()
+    else:
+        sys.stderr.write("There is no issue matching the identifier '%s'.\n" %
+                         args[0])
 
 elif command == "new":
     if len(args) == 0:
