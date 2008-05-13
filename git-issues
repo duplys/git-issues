@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-# git-issue, version 0.1
+# git-issue, version 0.2
 #
 # by John Wiegley <johnw@newartisans.com>
 
@@ -10,13 +10,143 @@ import re
 import string
 import optparse
 
+import cPickle
+
 from datetime   import datetime
 from subprocess import Popen, PIPE
-from os.path    import isdir, join
+from os.path    import isdir, isfile, join
 
 ######################################################################
 
-options = None
+options       = None
+cache_version = 3
+
+######################################################################
+
+class Person:
+    def __init__(self, name, email):
+        self.name  = name
+        self.email = email
+
+    def __str__(self):
+        return "%s <%s>" % (self.name, self.email)
+
+class Issue:
+    def __init__(self, author, title,
+                 summary     = None,
+                 description = None,
+                 reporters   = [],
+                 owners      = [],
+                 assigned    = None,
+                 carbons     = [],
+                 status      = "new",
+                 resolution  = None,
+                 type        = "defect",
+                 components  = [],
+                 version     = None,
+                 milestone   = None,
+                 severity    = "major",
+                 priority    = "med",
+                 tags        = []):
+        self.name        = None
+        self.author      = author
+        self.title       = title
+        self.summary     = summary
+        self.description = description
+        self.reporters   = reporters
+        self.owners      = owners
+        self.assigned    = assigned
+        self.carbons     = carbons
+        self.status      = status
+        self.resolution  = resolution
+        self.type        = type
+        self.components  = components
+        self.version     = version
+        self.milestone   = milestone
+        self.severity    = severity
+        self.priority    = priority
+        self.tags        = tags
+        self.created     = None
+        self.modified    = None
+
+class IssueSet:
+    """An IssueSet refers to a group of issues.  There is always at least one
+    IssueSet that refers to all of the issues which exist in a repository.
+    Other IssueSet's can be generated from that one as "views" or queries into
+    that data.
+
+    In essence, it contains both a set of Issue's which can be looked up by
+    their unique identifier, and also certain global definition, like the
+    allowable components, etc."""
+    def __init__(self):
+        self.statuses    = []
+        self.resolutions = []
+        self.types       = []
+        self.components  = []
+        self.versions    = []
+        self.milestones  = []
+        self.severities  = []
+        self.priorities  = []
+        self.issues      = []
+        self.issues_HEAD = None
+        self.dirty       = False
+
+        self.cache_version = cache_version
+
+    def head(self):
+        if not self.issues_HEAD:
+            self.issues_HEAD = self.current_head()
+        return self.issues_HEAD
+
+    def update_head(self, new_head):
+        self.issues_HEAD = new_head
+
+    def current_head(self):
+        pass
+
+    def read_issues(self):
+        self.dirty = True
+
+    def write_issues(self):
+        pass
+
+    def read_issue(self, name):
+        pass
+    def write_issue(self, issue):
+        pass
+
+    def issues_cache_file(self):
+        pass
+
+def read_issues_cache(issueSet):
+    cache_file = issueSet.issues_cache_file()
+    if isfile(cache_file):
+        fd = open(cache_file, 'rb')
+        if options.verbose:
+            print "Cache: Loading saved issues data"
+        cachedIssueSet = cPickle.load(fd)
+        if cachedIssueSet.cache_version == issueSet.cache_version and \
+           cachedIssueSet.head() == issueSet.current_head():
+            if options.verbose:
+                print "Cache: It's valid and we're using it"
+            return cachedIssueSet
+        if options.verbose:
+            print "Cache: It's no longer valid, throwing it away"
+    issueSet.read_issues()      # can't use cache, read from disk
+    return issueSet
+
+def write_issues_cache(issueSet):
+    if not issueSet.dirty:
+        return
+    cache_file = issueSet.issues_cache_file()
+    cache_file_dir = os.path.dirname(cache_file)
+    if not isdir(cache_file_dir):
+        os.makedirs(cache_file_dir)
+    fd = open(cache_file, 'wb')
+    try:
+        cPickle.dump(issueSet, fd)
+    finally:
+        fd.close()
 
 ######################################################################
 
@@ -65,95 +195,118 @@ def git(cmd, *args, **kwargs):
     if not kwargs.has_key('ignore_output'):
         return proc.stdout.read()[:-1]
 
-def create_issue_branch(cmd, args, kwargs):
-    """If an issues branch already exists at the remote, we simply
-    refer to it from now on.  Otherwise, we create a dummy commit in
-    order get things started."""
-    try:
-        hash = git('rev-parse', 'origin/issues', no_stderr = True)
-    except:
-        hash = git('hash-object', '-w', '--stdin',
-                   input = "Created issues branch\n")
-        hash = git('mktree', input = "100644 blob %s\tstart" % hash)
-        hash = git('commit-tree', hash, input = "Created issues branch")
-
-    git('branch', 'issues', hash)
-    return True
-
-def create_issue(title, creator):
-    """Create a new issue in the tracking database by building a
-    commit object that holds a reference to a unique blob describing
-    the issue.  Its uniqueness is determined by hashing the time of
-    creation, the creator's name and e-mail address, and the title of
-    the issues.  The issue is then kept under a sub-directory of the
-    same name within the issues branch, in a fashion similar to
-    `.git/objects`."""
-    global issues_HEAD
-
-    # Create a unique blob to represent the new issue.  This is the
-    # issue's official object name from now on, and will never change.
-    blob = git('hash-object', '-w', '--stdin',
-               input = "%s\n%s\n%s\n" % (datetime.now().strftime('%s'),
-                                         creator, title))
-    tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
-
-    # Merge this blob with existing issue blobs that share the same
-    # first two hash digits
-    ls_tree = git('ls-tree', '-r', issues_HEAD, '--', blob[:2])
-    ls_tree = re.sub('\t%s/' % blob[:2], '\t', ls_tree)
-    if ls_tree: ls_tree += '\n'
-
-    tree = git('mktree', input = (ls_tree +
-                                  "040000 tree %s\t%s\n" % (tree, blob[2:])))
-
-    # Merge it into the tree of issues overall
-    ls_tree = git('ls-tree', issues_HEAD)
-    ls_tree = re.sub('040000 tree [0-9a-f]{40}\t%s\n' % blob[:2], '', ls_tree)
-    if ls_tree: ls_tree += '\n'
-
-    tree = git('mktree', input = (ls_tree +
-                                  "040000 tree %s\t%s\n" % (tree, blob[:2])))
-
-    # Commit the merged tree (though at this moment it's a dangling commit)
-    commit = git('commit-tree', tree, '-p', issues_HEAD, input = title)
-
-    # Update the HEAD of the issues branch to point to the commit we
-    # just made.
-    git('update-ref', 'refs/heads/issues', commit, issues_HEAD)
-
-    # Reset the `issues_HEAD` global variable, then return the object
-    # name of the new issue.
-    issues_HEAD = commit
-    return blob
-
-class issue_names_iter:
-    """This is an iterator class to return the object names of all
-    known issues."""
-    ls_tree = None
-
+class GitIssueSet(IssueSet):
+    """This object implements all the command necessary to interact with Git
+    for the purpose of storing and distributing issues."""
     def __init__(self):
-        self.ls_tree = string.split(git('ls-tree', '-r', issues_HEAD), '\n')
+        self.GIT_DIR = git('rev-parse', '--git-dir')
+        IssueSet.__init__(self)
 
-    def __iter__(self):
-        return self
+    def issues_cache_file(self):
+        return join(self.GIT_DIR, "issues")
 
-    def next(self):
-        if not self.ls_tree:
-            raise StopIteration
+    def create_issue_branch(self, cmd, args, kwargs):
+        """If an issues branch already exists at the remote, we simply refer
+        to it from now on.  Otherwise, we create a dummy commit in order get
+        things started."""
+        try:
+            hash = git('rev-parse', 'origin/issues', no_stderr = True)
+        except:
+            hash = git('hash-object', '-w', '--stdin',
+                       input = "Created issues branch\n")
+            hash = git('mktree', input = "100644 blob %s\tproject" % hash)
+            hash = git('commit-tree', hash,
+                       input = "Created: %s" % datetime.now().strftime('%s'))
 
-        match = re.match('100644 blob ([0-9a-f]{40})\t(start|([0-9a-f]{2})/([0-9a-f]{38})/info)',
-                         self.ls_tree[0])
-        assert match
+        git('branch', 'issues', hash)
+        return True
 
-        if match.group(2) == 'start':
-            raise StopIteration
+    def current_head(self):
+        return git('rev-parse', 'issues', restart = self.create_issue_branch)
 
-        hash = match.group(1)
-        assert hash == match.group(3) + match.group(4)
+    def read_issue(self, name):
+        info = string.split(git('cat-file', 'blob', name), '\n')
+        match = re.match('(.+) +<(.+)>$', info[1])
+        assert match            # jww (2008-05-12): Be more resilient here
+        issue = Issue(Person(match.group(1), match.group(2)), info[2])
+        issue.name    = name
+        issue.created = datetime.fromtimestamp(long(info[0]))
+        return issue
 
-        self.ls_tree = self.ls_tree[1:]
+    def update_issue(self, issue):
+        pass
 
-        return hash
+    def write_issue(self, issue):
+        """Create a new issue in the tracking database by building a commit
+        object that holds a reference to a unique blob describing the issue.
+        Its uniqueness is determined by hashing the time of creation, the
+        creator's name and e-mail address, and the title of the issues.  The
+        issue is then kept under a sub-directory of the same name within the
+        issues branch, in a fashion similar to `.git/objects`."""
+        if issue.name is not None:
+            self.update_issue(issue)
+            return
+
+        # Create a unique blob to represent the new issue.  This is the
+        # issue's official object name from now on, and will never change.
+        blob = git('hash-object', '-w', '--stdin',
+                   input = "%s\n%s\n%s\n" % (datetime.now().strftime('%s'),
+                                             issue.author, issue.title))
+        tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
+
+        # Merge this blob with existing issue blobs that share the same
+        # first two hash digits
+        ls_tree = git('ls-tree', '-r', self.head(), '--', blob[:2])
+        ls_tree = re.sub('\t%s/' % blob[:2], '\t', ls_tree)
+        if ls_tree: ls_tree += '\n'
+
+        tree = git('mktree', input =
+                   (ls_tree + "040000 tree %s\t%s\n" % (tree, blob[2:])))
+
+        # Merge it into the tree of issues overall
+        ls_tree = git('ls-tree', self.head())
+        ls_tree = re.sub('040000 tree [0-9a-f]{40}\t%s\n' % blob[:2],
+                         '', ls_tree)
+        if ls_tree: ls_tree += '\n'
+
+        tree = git('mktree', input =
+                   (ls_tree + "040000 tree %s\t%s\n" % (tree, blob[:2])))
+
+        # Commit the merged tree (though at this moment it's a dangling commit)
+        commit = git('commit-tree', tree, '-p', self.head(),
+                     input = issue.title)
+
+        # Update the HEAD of the issues branch to point to the commit we
+        # just made.
+        git('update-ref', 'refs/heads/issues', commit, self.head())
+
+        # Reset the `issues_HEAD` global variable, then return the object
+        # name of the new issue.
+        self.update_head(commit)
+
+        issue.name = blob
+
+    def read_issues(self):
+        ls_tree = string.split(git('ls-tree', '-r', self.head()), '\n')
+
+        self.issues = []        # clear any existing data
+
+        for line in ls_tree:
+            match = re.match('100644 blob ([0-9a-f]{40})\t(project|([0-9a-f]{2})/([0-9a-f]{38})/info)',
+                             line)
+            assert match
+
+            if match.group(2) == 'project':
+                break
+
+            hash = match.group(1)
+            assert hash == match.group(3) + match.group(4)
+
+            self.issues.append(self.read_issue(hash))
+
+        IssueSet.read_issues(self) # set the dirty bit
+
+        return self.issues
 
 ######################################################################
 
@@ -168,14 +321,6 @@ parser.add_option("-v", "--verbose",
 
 ######################################################################
 
-issues_HEAD = git('rev-parse', 'issues', restart = create_issue_branch)
-
-#GIT_DIR    = git('rev-parse', '--git-dir')
-#issue_DIR  = join(GIT_DIR, "issues")
-#
-#if not isdir(issue_DIR):
-#    os.mkdir(issue_DIR)
-
 if len(args) == 0:
     print "Show help here."
     sys.exit(1)
@@ -183,37 +328,44 @@ if len(args) == 0:
 command = args[0]
 args    = args[1:]
 
+# jww (2008-05-12): Pick the appropriate IssueSet to used based on what we
+# find in our environment.
+
+issueSet = GitIssueSet()
+
 if command == "list":
+    issueSet = read_issues_cache(issueSet)
+
     print "   #    Id     Title                   State  Date  Assign  Tags"
     print "-------------------------------------------------------------------------------"
     index = 1
-    for hash in issue_names_iter():
-        info = string.split(git('cat-file', 'blob', hash), '\n')
-        when = datetime.fromtimestamp(long(info[0]))
+    for issue in issueSet.issues:
         print "%4d  %s  %-23s %-6s %5s %6s %s" % \
-            (index, hash[:7], info[2], 'open', when.strftime('%m/%d'),
-             info[1][:6], '')
+            (index, issue.name[:7], issue.title, issue.status,
+             issue.created.strftime('%m/%d'), str(issue.author)[:6], '')
         index += 1
+
+    write_issues_cache(issueSet)
 
 elif command == "show":
     if len(args) == 0:
         print "Shows needs an index or Id."
-    try:
-        idx = int(args[0])
-        for hash in issue_names_iter():
-            if idx == 1:
-                break
-            idx -= 1
-    except:
-        hash = args[0]
-
-    print git('cat-file', 'blob', hash)
+    #try:
+    #    idx = int(args[0])
+    #    for hash in issue_names_iter():
+    #        if idx == 1:
+    #            break
+    #        idx -= 1
+    #except:
+    #    hash = args[0]
+    #
+    #print git('cat-file', 'blob', hash)
 
 elif command == "new":
     if len(args) == 0:
         print "New needs a title."
-    head = create_issue(args[0], "%s <%s>" % (git('config', 'user.name'),
-                                              git('config', 'user.email')))
-    print "New issue %s created." % head
+    #head = create_issue(args[0], "%s <%s>" % (git('config', 'user.name'),
+    #                                          git('config', 'user.email')))
+    #print "New issue %s created." % head
 
 # git-issue ends here
