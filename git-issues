@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# git-issue, version 0.2
+# git-issue, version 0.3
 #
 # by John Wiegley <johnw@newartisans.com>
 
@@ -23,6 +23,7 @@ except:
     from StringIO import StringIO
 
 import cPickle
+import xml.dom.minidom
 
 from datetime   import datetime
 from subprocess import Popen, PIPE
@@ -32,7 +33,7 @@ from os.path    import isdir, isfile, join
 
 iso_fmt       = "%Y%m%dT%H%M%S"
 options       = None
-cache_version = 6
+cache_version = 9
 
 ######################################################################
 
@@ -44,17 +45,43 @@ class Person:
     def __str__(self):
         return "%s <%s>" % (self.name, self.email)
 
-    def appendPerson(self, doc, parent, fd = sys.stdout):
+    def from_xml(cls, node):
+        person = Person(node.childNodes[0].data,
+                        node.childNodes[1].data)
+        return person
+
+    from_xml = classmethod(from_xml)
+
+def to_xml(doc, parent, data):
+    if isinstance(data, datetime):
+        element = doc.createElement("datetime")
+        element.appendChild(doc.createTextNode(data.strftime(iso_fmt)))
+        parent.appendChild(element)
+
+    elif isinstance(data, Person):
         person = doc.createElement("person")
-        parent.appendChild(person)
 
         name = doc.createElement("name")
-        name.appendChild(doc.createTextNode(self.name))
+        name.appendChild(doc.createTextNode(data.name))
         person.appendChild(name)
 
         email = doc.createElement("email")
-        email.appendChild(doc.createTextNode(self.email))
+        email.appendChild(doc.createTextNode(data.email))
         person.appendChild(email)
+
+        parent.appendChild(person)
+
+    elif isinstance(data, list):
+        element = doc.createElement("list")
+        for child in data:
+            to_xml(doc, element, child)
+        parent.appendChild(element)
+
+    elif isinstance(data, str):
+        parent.appendChild(doc.createTextNode(data))
+
+    else:
+        assert False
 
 class Issue:
     def __init__(self, issueSet, author, title,
@@ -66,7 +93,7 @@ class Issue:
                  carbons     = [],
                  status      = "new",
                  resolution  = None,
-                 type        = "defect",
+                 issue_type  = "defect",
                  components  = [],
                  version     = None,
                  milestone   = None,
@@ -85,7 +112,7 @@ class Issue:
         self.carbons     = carbons
         self.status      = status
         self.resolution  = resolution
-        self.type        = type
+        self.issue_type  = issue_type
         self.components  = components
         self.version     = version
         self.milestone   = milestone
@@ -94,6 +121,122 @@ class Issue:
         self.tags        = tags
         self.created     = datetime.now()
         self.modified    = None
+        self.changes     = {}
+        self.dirty       = True
+
+    def mark_dirty(self):
+        self.modified       = datetime.now()
+        self.dirty          = True
+        self.issueSet.dirty = True
+
+    def note_change(self, field, before, after):
+        if self.changes.has_key(field):
+            data = self.changes[field]
+            data[1] = after
+        else:
+            data = [before, after]
+        self.changes[field] = data
+
+    def dump_changes(self, include_header = True, fd = sys.stdout):
+        if not self.changes:
+            return
+            
+        doc = xml.dom.minidom.Document()
+        changes = doc.createElement("changes")
+        doc.appendChild(changes)
+
+        for field_name in self.changes.keys():
+            field = doc.createElement("field")
+            field.setAttribute("name", field_name)
+
+            data = self.changes[field_name]
+
+            before = doc.createElement("before")
+            to_xml(doc, before, data[0])
+            field.appendChild(before)
+
+            after = doc.createElement("after")
+            to_xml(doc, after, data[1])
+            field.appendChild(after)
+
+            changes.appendChild(field)
+
+        if include_header:
+            fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+        else:
+            buffer = StringIO()
+            buffer.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+            fd.write(re.sub('^.+\n', '', buffer.getvalue()))
+
+        doc.unlink()
+
+    def set_author(self, author):
+        self.note_change('author', self.author, author)
+        self.author = author
+
+    def set_title(self, title):
+        self.note_change('title', self.title, title)
+        self.title = title
+
+    def set_summary(self, summary):
+        self.note_change('summary', self.summary, summary)
+        self.summary = summary
+
+    def set_description(self, description):
+        self.note_change('description', self.description, description)
+        self.description = description
+
+    def set_reporters(self, reporters):
+        self.note_change('reporters', self.reporters, reporters)
+        self.reporters = reporters
+
+    def set_owners(self, owners):
+        self.note_change('owners', self.owners, owners)
+        self.owners = owners
+
+    def set_assigned(self, assigned):
+        self.note_change('assigned', self.assigned, assigned)
+        self.assigned = assigned
+
+    def set_carbons(self, carbons):
+        self.note_change('carbons', self.carbons, carbons)
+        self.carbons = carbons
+
+    def set_status(self, status):
+        self.note_change('status', self.status, status)
+        self.status = status
+
+    def set_resolution(self, resolution):
+        self.note_change('resolution', self.resolution, resolution)
+        self.resolution = resolution
+
+    def set_issue_type(self, issue_type):
+        self.note_change('type', self.issue_type, issue_type)
+        self.issue_type = issue_type
+
+    def set_components(self, components):
+        self.note_change('components', self.components, components)
+        self.components = components
+
+    def set_version(self, version):
+        self.note_change('version', self.version, version)
+        self.version = version
+
+    def set_milestone(self, milestone):
+        self.note_change('milestone', self.milestone, milestone)
+        self.milestone = milestone
+
+    def set_severity(self, severity):
+        self.note_change('severity', self.severity, severity)
+        self.severity = severity
+
+    def set_priority(self, priority):
+        self.note_change('priority', self.priority, priority)
+        self.priority = priority
+
+    def set_tags(self, tags):
+        self.note_change('tags', self.tags, tags)
+        self.tags = tags
 
     def format_long_text(self, text, indent = 13):
         if not text:
@@ -127,55 +270,18 @@ class Issue:
 
         return buffer.getvalue()
 
-    def show(self, fd = sys.stdout):
-        fd.write("""
-      Title: %s
-    Summary: %s
+    def from_xml(cls, issueSet, doc):
+        node   = doc.firstChild
+        name   = node.childNodes[0].data
+        author = Person.from_xml(node.childNodes[1])
+        title  = node.childNodes[2].data
 
-Description: %s
+        issue  = Issue(issueSet, author, title)
+        issue.name  = name
+        issue.dirty = False
+        return issue
 
-     Author: %s
-   Reporter: %s
-      Owner: %s
-   Assigned: %s
-         Cc: %s
-
-       Type: %s
-     Status: %s
- Resolution: %s
- Components: %s
-    Version: %s
-  Milestone: %s
-   Severity: %s
-   Priority: %s
-       Tags: %s
-   
-    Created: %s
-   Modified: %s
-
-""" % (self.title,
-       self.format_long_text(self.summary),
-
-       self.format_long_text(self.description),
-
-       self.author,
-       self.format_people_list(self.reporters),
-       self.format_people_list(self.owners),
-       self.format_people_list(self.assigned),
-       self.format_people_list(self.carbons),
-
-       self.type,
-       self.status,
-       self.resolution or "",
-       self.components or "",
-       self.version or "",
-       self.milestone or "",
-       self.severity,
-       self.priority,
-       self.tags or "",
-
-       self.created,
-       self.modified))
+    from_xml = classmethod(from_xml)
 
     def dump_xml(self, fd = sys.stdout):
         import xml.dom.minidom
@@ -184,111 +290,116 @@ Description: %s
         issue = doc.createElement("issue")
         doc.appendChild(issue)
 
-        name = doc.createElement("name")
-        name.appendChild(doc.createTextNode(self.name))
-        issue.appendChild(name)
+        if self.name:
+            name = doc.createElement("name")
+            to_xml(doc, name, self.name)
+            issue.appendChild(name)
+
+        author = doc.createElement("author")
+        to_xml(doc, author, self.author)
+        issue.appendChild(author)
 
         title = doc.createElement("title")
-        title.appendChild(doc.createTextNode(self.title))
+        to_xml(doc, title, self.title)
         issue.appendChild(title)
 
         if self.summary:
             summary = doc.createElement("summary")
-            summary.appendChild(doc.createTextNode(self.summary))
+            to_xml(doc, summary, self.summary)
             issue.appendChild(summary)
 
         if self.description:
             description = doc.createElement("description")
-            description.appendChild(doc.createTextNode(self.description))
+            to_xml(doc, description, self.description)
             issue.appendChild(description)
-
-        author = doc.createElement("author")
-        self.author.appendPerson(doc, author, fd)
-        issue.appendChild(author)
 
         if self.reporters:
             reporters = doc.createElement("reporters")
-            for reporter in self.reporters:
-                reporter.appendPerson(doc, reporters, fd)
-                reporters.appendChild(reporter)
+            to_xml(doc, reporters, self.reporters)
+            issue.appendChild(reporters)
 
         if self.owners:
             owners = doc.createElement("owners")
-            for owner in self.owners:
-                owner.appendPerson(doc, owners, fd)
-                owners.appendChild(owner)
+            to_xml(doc, owners, self.owners)
+            issue.appendChild(owners)
 
         if self.assigned:
             assigned = doc.createElement("assigned")
-            for assignee in self.assigned:
-                assignee.appendPerson(doc, assigned, fd)
-                assigned.appendChild(assignee)
+            to_xml(doc, assigned, self.assigned)
+            issue.appendChild(assigned)
 
         if self.carbons:
             carbons = doc.createElement("carbons")
-            for carbon in self.carbons:
-                carbon.appendPerson(doc, carbons, fd)
-                carbons.appendChild(carbon)
+            to_xml(doc, carbons, self.carbons)
+            issue.appendChild(carbons)
 
         if self.status:
             status = doc.createElement("status")
-            status.appendChild(doc.createTextNode(self.status))
+            to_xml(doc, status, self.status)
             issue.appendChild(status)
 
         if self.resolution:
             resolution = doc.createElement("resolution")
-            resolution.appendChild(doc.createTextNode(self.resolution))
+            to_xml(doc, resolution, self.resolution)
             issue.appendChild(resolution)
 
-        if self.type:
-            type = doc.createElement("type")
-            type.appendChild(doc.createTextNode(self.type))
-            issue.appendChild(type)
+        if self.issue_type:
+            issue_type = doc.createElement("type")
+            to_xml(doc, issue_type, self.issue_type)
+            issue.appendChild(issue_type)
 
         if self.components:
             components = doc.createElement("components")
-            for component in self.components:
-                element = doc.createElement("component")
-                element.appendChild(doc.createTextNode(component))
-                components.appendChild(element)
+            to_xml(doc, components, self.components)
+            issue.appendChild(components)
 
         if self.version:
             version = doc.createElement("version")
-            version.appendChild(doc.createTextNode(self.version))
+            to_xml(doc, version, self.version)
             issue.appendChild(version)
 
         if self.milestone:
             milestone = doc.createElement("milestone")
-            milestone.appendChild(doc.createTextNode(self.milestone))
+            to_xml(doc, milestone, self.milestone)
             issue.appendChild(milestone)
 
         if self.severity:
             severity = doc.createElement("severity")
-            severity.appendChild(doc.createTextNode(self.severity))
+            to_xml(doc, severity, self.severity)
             issue.appendChild(severity)
 
         if self.priority:
             priority = doc.createElement("priority")
-            priority.appendChild(doc.createTextNode(self.priority))
+            to_xml(doc, priority, self.priority)
             issue.appendChild(priority)
 
         if self.tags:
             tags = doc.createElement("tags")
-            for tag in self.tags:
-                element = doc.createElement("tag")
-                element.appendChild(doc.createTextNode(tag))
-                tags.appendChild(element)
+            to_xml(doc, tags, self.tags)
+            issue.appendChild(tags)
 
         created = doc.createElement("created")
-        created.appendChild(doc.createTextNode(self.created.strftime(iso_fmt)))
+        to_xml(doc, created, self.created)
         issue.appendChild(created)
 
         if self.modified:
             modified = doc.createElement("modified")
-            modified.appendChild(doc.createTextNode(self.modified.strftime(iso_fmt)))
+            to_xml(doc, modified, self.modified)
             issue.appendChild(modified)
 
         fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+        doc.unlink()
+
+    def __getstate__(self):
+        odict = self.__dict__.copy() # copy the dict since we change it
+        del odict['changes']         # remove change log
+        del odict['dirty']           # remove dirty flag
+        return odict
+
+    def __setstate__(self,dict):
+        self.__dict__.update(dict)   # update attributes
+        self.changes = {}
+        self.dirty   = False
 
 class IssueSet:
     """An IssueSet refers to a group of issues.  There is always at least one
@@ -300,19 +411,19 @@ class IssueSet:
     their unique identifier, and also certain global definition, like the
     allowable components, etc."""
     def __init__(self):
-        self.statuses    = []
-        self.resolutions = []
-        self.types       = []
-        self.components  = []
-        self.versions    = []
-        self.milestones  = []
-        self.severities  = []
-        self.priorities  = []
-        self.issues      = {}
-        self.issues_HEAD = None
-        self.dirty       = False
-
+        self.statuses      = []
+        self.resolutions   = []
+        self.issue_types   = []
+        self.components    = []
+        self.versions      = []
+        self.milestones    = []
+        self.severities    = []
+        self.priorities    = []
+        self.issues        = {}
+        self.issues_HEAD   = None
+        self.dirty         = False
         self.cache_version = cache_version
+        self.created       = datetime.now()
 
     def head(self):
         if not self.issues_HEAD:
@@ -321,6 +432,7 @@ class IssueSet:
 
     def update_head(self, new_head):
         self.issues_HEAD = new_head
+        self.dirty       = True
 
     def current_head(self):
         assert False
@@ -328,77 +440,156 @@ class IssueSet:
     def current_author(self):
         assert False
 
+    def read_project(self):
+        pass
+
     def read_issues(self):
+        assert False
+
+    def add_issue(self, issue):
+        self.issues[issue.name] = issue
         self.dirty = True
 
-    def write_issues(self):
-        pass
-
     def read_issue(self, name):
-        pass
+        assert False
     def write_issue(self, issue):
-        pass
+        assert False
 
     def issues_cache_file(self):
-        pass
+        assert False
+    
+    def dump_xml(self, fd = sys.stdout):
+        import xml.dom.minidom
 
-def load_issues(issueSet):
-    """Given a newly created IssueSet object as a template, see if we can
-    restore the cached version of the data from disk, and then check whether
-    it's still valid.  This can _greatly_ speed up subsequent list and show
-    operations.
+        doc = xml.dom.minidom.Document()
+        set = doc.createElement("issue-set")
+        doc.appendChild(set)
 
-    The reason why a newly created template exists is to abstract
-    DVCS-specific behavior, such as the location of the cache file.
+        created = doc.createElement("created")
+        to_xml(doc, created, self.created)
+        set.appendChild(created)
 
-    Thus, a typical session looks like this:
+        if self.statuses:
+            statuses = doc.createElement("statuses")
+            to_xml(doc, statuses, self.statuses)
+            set.appendChild(statuses)
 
-      issueSet = GitIssueSet()   # or whichever DVCS backend you use
+        if self.resolutions:
+            resolutions = doc.createElement("resolutions")
+            to_xml(doc, resolutions, self.resolutions)
+            set.appendChild(resolutions)
 
-      if ... looking at issues list is required ...:
-          issueSet = load_issues(issueSet)
+        if self.issue_types:
+            issue_types = doc.createElement("types")
+            to_xml(doc, issue_types, self.issue_types)
+            set.appendChild(issue_types)
 
-          ... use the issue data ..."""
-    cache_file = issueSet.issues_cache_file()
-    if isfile(cache_file):
-        fd = open(cache_file, 'rb')
-        if options.verbose:
-            print "Cache: Loading saved issues data"
-        try:
-            cachedIssueSet = cPickle.load(fd)
-        finally:
-            fd.close()
+        if self.components:
+            components = doc.createElement("components")
+            to_xml(doc, components, self.components)
+            set.appendChild(components)
 
-        if cachedIssueSet.cache_version == issueSet.cache_version and \
-           cachedIssueSet.head() == issueSet.current_head():
+        if self.versions:
+            versions = doc.createElement("versions")
+            to_xml(doc, versions, self.versions)
+            set.appendChild(versions)
+
+        if self.milestones:
+            milestones = doc.createElement("milestones")
+            to_xml(doc, milestones, self.milestones)
+            set.appendChild(milestones)
+
+        if self.severities:
+            severities = doc.createElement("severities")
+            to_xml(doc, severities, self.severities)
+            set.appendChild(severities)
+
+        if self.priorities:
+            priorities = doc.createElement("priorities")
+            to_xml(doc, priorities, self.priorities)
+            set.appendChild(priorities)
+
+        fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+        doc.unlink()
+
+    def load_state(cls, issueSet):
+        """Given a newly created IssueSet object as a template, see if we can
+        restore the cached version of the data from disk, and then check whether
+        it's still valid.  This can _greatly_ speed up subsequent list and show
+        operations.
+
+        The reason why a newly created template exists is to abstract
+        DVCS-specific behavior, such as the location of the cache file.
+
+        Thus, a typical session looks like this:
+
+          issueSet = GitIssueSet()   # or whichever DVCS backend you use
+
+          if ... looking at issues list is required ...:
+              issueSet = load_issues(issueSet)
+
+              ... use the issue data ..."""
+        cache_file = issueSet.issues_cache_file()
+        if isfile(cache_file):
+            fd = open(cache_file, 'rb')
             if options.verbose:
-                print "Cache: It's valid and we're using it"
-            return cachedIssueSet
+                print "Cache: Loading saved issues data"
+            try:
+                cachedIssueSet = cPickle.load(fd)
+            finally:
+                fd.close()
 
-        if options.verbose:
-            print "Cache: It's no longer valid, throwing it away"
+            if cachedIssueSet.cache_version == issueSet.cache_version and \
+               cachedIssueSet.head() == issueSet.current_head():
+                if options.verbose:
+                    print "Cache: It is valid and usable"
+                return cachedIssueSet
 
-    issueSet.read_issues()      # can't use cache, read from disk
+            if options.verbose:
+                print "Cache: No longer valid, throwing it away"
 
-    return issueSet
+        # We can't use or rely on the cache, so read all details from disk
+        issueSet.read_project()
+        issueSet.read_issues()
 
-def save_issues(issueSet):
-    """Write an IssueSet to disk in object form, for fast loading on the next
-    iteration.  This is only done if there are actual changes to write."""
-    if not issueSet.dirty:
-        return
+        return issueSet
 
-    cache_file = issueSet.issues_cache_file()
-    cache_file_dir = os.path.dirname(cache_file)
+    load_state = classmethod(load_state)
 
-    if not isdir(cache_file_dir):
-        os.makedirs(cache_file_dir)
+    def save_state(self):
+        """Write an IssueSet to disk in object form, for fast loading on the next
+        iteration.  This is only done if there are actual changes to write."""
+        if self.dirty:
+            for name in self.issues.keys():
+                issue = self.issues[name]
+                if issue.dirty:
+                    if issue.name:
+                        self.update_issue(issue)
+                    else:
+                        self.write_issue(issue)
 
-    fd = open(cache_file, 'wb')
-    try:
-        cPickle.dump(issueSet, fd)
-    finally:
-        fd.close()
+            cache_file     = self.issues_cache_file()
+            cache_file_dir = os.path.dirname(cache_file)
+
+            if not isdir(cache_file_dir):
+                os.makedirs(cache_file_dir)
+
+            fd = open(cache_file, 'wb')
+            try:
+                cPickle.dump(issueSet, fd)
+            finally:
+                fd.close()
+
+            self.dirty = False
+
+    def __getstate__(self):
+        odict = self.__dict__.copy() # copy the dict since we change it
+        del odict['dirty']           # remove dirty flag
+        return odict
+
+    def __setstate__(self,dict):
+        self.__dict__.update(dict)   # update attributes
+        self.dirty   = False
 
 ######################################################################
 
@@ -472,9 +663,12 @@ class GitIssueSet(IssueSet):
         except:
             hash = git('hash-object', '-w', '--stdin',
                        input = "Created issues branch\n")
-            hash = git('mktree', input = "100644 blob %s\tproject" % hash)
-            hash = git('commit-tree', hash,
-                       input = "Created: %s" % datetime.now().strftime(iso_fmt))
+            hash = git('mktree', input = "100644 blob %s\tproject\n" % hash)
+
+            buffer = StringIO()
+            self.dump_xml(buffer)
+            hash = git('commit-tree', hash, input = buffer.getvalue())
+            del buffer
 
         git('branch', 'issues', hash)
         return True
@@ -489,12 +683,11 @@ class GitIssueSet(IssueSet):
         return self.GIT_AUTHOR
 
     def read_issue(self, name):
-        info = string.split(git('cat-file', 'blob', name), '\n')
-        match = re.match('(.+) +<(.+)>$', info[1])
-        assert match            # jww (2008-05-12): Be more resilient here
-        issue = Issue(self, Person(match.group(1), match.group(2)), info[2])
-        issue.name    = name
-        issue.created = datetime.strptime(info[0], iso_fmt)
+        data = git('cat-file', 'blob', '%s/%s/info' % (name[:2], name[2:]),
+                   no_stderr = True)
+        doc = xml.dom.minidom.parseString(data)
+        issue = Issue.from_xml(doc)
+        doc.unlink()
         return issue
 
     def update_issue(self, issue):
@@ -507,18 +700,17 @@ class GitIssueSet(IssueSet):
         creator's name and e-mail address, and the title of the issues.  The
         issue is then kept under a sub-directory of the same name within the
         issues branch, in a fashion similar to `.git/objects`."""
-        if issue.name is not None:
-            self.update_issue(issue)
-            return
+        assert issue.name is None
 
         # Create a unique blob to represent the new issue.  This is the
         # issue's official object name from now on, and will never change.
-        blob = git('hash-object', '-w', '--stdin',
-                   input = "%s\n%s\n%s\n" % (datetime.now().strftime(iso_fmt),
-                                             issue.author, issue.title))
-        tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
-
+        buffer = StringIO()
+        issue.dump_xml(buffer)
+        blob = git('hash-object', '-w', '--stdin', input = buffer.getvalue())
+        del buffer
         issue.name = blob
+
+        tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
 
         # Merge this blob with existing issue blobs that share the same
         # first two hash digits
@@ -549,9 +741,6 @@ class GitIssueSet(IssueSet):
         # Reset the `issues_HEAD` global variable, then return the object
         # name of the new issue.
         self.update_head(commit)
-        self.issues[issue.name] = issue
-        issue.modified = datetime.now()
-        self.dirty = True
 
     def read_issues(self):
         ls_tree = string.split(git('ls-tree', '-r', self.head()), '\n')
@@ -569,9 +758,7 @@ class GitIssueSet(IssueSet):
             hash = match.group(1)
             assert hash == match.group(3) + match.group(4)
 
-            self.issues[hash] = self.read_issue(hash)
-
-        IssueSet.read_issues(self) # set the dirty bit
+            self.add_issue(self.read_issue(hash))
 
         return self.issues
 
@@ -586,6 +773,22 @@ parser.add_option("-v", "--verbose",
 
 (options, args) = parser.parse_args()
 
+def get_issue(issueSet, id):
+    issue = None
+    try:
+        idx = int(id) - 1
+        issue = issueSet.issues[issueSet.issues.keys()[idx]]
+    except:
+        for name in issueSet.issues.keys():
+            if re.match(id, name):
+                issue = issueSet.issues[name]
+                break
+
+    if not issue:
+        raise Exception("There is no issue matching the identifier '%s'.\n" % id)
+
+    return issue
+
 ######################################################################
 
 if len(args) == 0:
@@ -595,60 +798,120 @@ if len(args) == 0:
 command = args[0]
 args    = args[1:]
 
+######################################################################
+
 # jww (2008-05-12): Pick the appropriate IssueSet to used based on what we
 # find in our environment.
 
-issueSet = GitIssueSet()
+issueSet = IssueSet.load_state(GitIssueSet())
+
+######################################################################
 
 if command == "list":
-    issueSet = load_issues(issueSet)
-
+    print
     print "   #    Id     Title                   State  Date  Assign  Tags"
     print "-------------------------------------------------------------------------------"
+
     index = 1
     for name in issueSet.issues.keys():
         issue = issueSet.issues[name]
+
         print "%4d  %s  %-23s %-6s %5s %6s %s" % \
             (index, issue.name[:7], issue.title, issue.status,
              issue.created and issue.created.strftime('%m/%d'),
              str(issue.author)[:6], '')
+
         index += 1
+
+    print
+
+######################################################################
 
 elif command == "show" or command == "dump":
     if len(args) == 0:
         print "Shows needs an index or Id."
 
-    issueSet = load_issues(issueSet)
+    issue = get_issue(issueSet, args[0])
+    if command == "show":
+        sys.stdout.write("""
+      Title: %s
+    Summary: %s
 
-    issue = None
-    try:
-        idx = int(args[0]) - 1
-        issue = issueSet.issues[issueSet.issues.keys()[idx]]
-    except:
-        for name in issueSet.issues.keys():
-            if re.match(args[0], name):
-                issue = issueSet.issues[name]
-                break
+Description: %s
 
-    if issue:
-        if command == "show":
-            issue.show()
-        else:
-            issue.dump_xml()
+     Author: %s
+   Reporter: %s
+      Owner: %s
+   Assigned: %s
+         Cc: %s
+
+       Type: %s
+     Status: %s
+ Resolution: %s
+ Components: %s
+    Version: %s
+  Milestone: %s
+   Severity: %s
+   Priority: %s
+       Tags: %s
+   
+    Created: %s
+   Modified: %s
+
+""" % (issue.title,
+       issue.format_long_text(issue.summary),
+
+       issue.format_long_text(issue.description),
+
+       issue.author,
+       issue.format_people_list(issue.reporters),
+       issue.format_people_list(issue.owners),
+       issue.format_people_list(issue.assigned),
+       issue.format_people_list(issue.carbons),
+
+       issue.issue_type,
+       issue.status,
+       issue.resolution or "",
+       issue.components or "",
+       issue.version or "",
+       issue.milestone or "",
+       issue.severity,
+       issue.priority,
+       issue.tags or "",
+
+       issue.created,
+       issue.modified))
     else:
-        sys.stderr.write("There is no issue matching the identifier '%s'.\n" %
-                         args[0])
+        issue.dump_xml()
+
+######################################################################
+
+elif command == "change":
+    if len(args) == 0:
+        print "Change needs an issue."
+
+    issue = get_issue(issueSet, args[0])
+
+    # jww (2008-05-13): Need to parse datetime, lists, and people
+    eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
+
+######################################################################
 
 elif command == "new":
     if len(args) == 0:
         print "New needs a title."
 
     issue = Issue(issueSet, issueSet.current_author(), args[0])
-    issueSet.write_issue(issue)
-    print "New issue %s created." % issue.name
+    issueSet.add_issue(issue)
 
-# If any of the commands made the issueSet dirty, write out a new cache
-save_issues(issueSet)
+######################################################################
+
+# If any of the commands made the issueSet dirty, (possibly) update the
+# repository and write out a new cache
+
+issueSet.save_state()
+
+######################################################################
 
 sys.exit(0)
 
