@@ -1,14 +1,26 @@
 #!/usr/bin/env python
+# coding: utf-8
 
 # git-issue, version 0.2
 #
 # by John Wiegley <johnw@newartisans.com>
+
+# TODO: (until I can add these bugs to the repo itself!)
+#
+# 1. use utf-8 throughout
+# 2. use -z flag for ls-tree
+# 3. use UTC throughout
 
 import sys
 import os
 import re
 import string
 import optparse
+
+try:
+    from cStringIO import StringIO
+except:
+    from StringIO import StringIO
 
 import cPickle
 
@@ -18,8 +30,9 @@ from os.path    import isdir, isfile, join
 
 ######################################################################
 
+iso_fmt       = "%Y%m%dT%H%M%S"
 options       = None
-cache_version = 4
+cache_version = 6
 
 ######################################################################
 
@@ -31,8 +44,20 @@ class Person:
     def __str__(self):
         return "%s <%s>" % (self.name, self.email)
 
+    def appendPerson(self, doc, parent, fd = sys.stdout):
+        person = doc.createElement("person")
+        parent.appendChild(person)
+
+        name = doc.createElement("name")
+        name.appendChild(doc.createTextNode(self.name))
+        person.appendChild(name)
+
+        email = doc.createElement("email")
+        email.appendChild(doc.createTextNode(self.email))
+        person.appendChild(email)
+
 class Issue:
-    def __init__(self, author, title,
+    def __init__(self, issueSet, author, title,
                  summary     = None,
                  description = None,
                  reporters   = [],
@@ -46,8 +71,9 @@ class Issue:
                  version     = None,
                  milestone   = None,
                  severity    = "major",
-                 priority    = "med",
+                 priority    = "medium",
                  tags        = []):
+        self.issueSet    = issueSet
         self.name        = None
         self.author      = author
         self.title       = title
@@ -66,16 +92,203 @@ class Issue:
         self.severity    = severity
         self.priority    = priority
         self.tags        = tags
-        self.created     = None
+        self.created     = datetime.now()
         self.modified    = None
+
+    def format_long_text(self, text, indent = 13):
+        if not text:
+            return "<none>"
+
+        lines = string.split(text, '\n')
+        
+        buffer = StringIO()
+        first = True
+        for line in lines:
+            if not first:
+                buffer.write("\n%s" % (" " * indent))
+            else:
+                first = False
+            buffer.write(line)
+
+        return buffer.getvalue()
+
+    def format_people_list(self, people, indent = 13):
+        if not people:
+            return "<no one yet>"
+
+        buffer = StringIO()
+        first = True
+        for person in people:
+            if not first:
+                buffer.write(",\n%s" % (" " * indent))
+            else:
+                first = False
+            buffer.write(person)
+
+        return buffer.getvalue()
 
     def show(self, fd = sys.stdout):
         fd.write("""
-Title:   %s
-Author:  %s
-Created: %s
+      Title: %s
+    Summary: %s
 
-""" % (self.title, self.author, self.created))
+Description: %s
+
+     Author: %s
+   Reporter: %s
+      Owner: %s
+   Assigned: %s
+         Cc: %s
+
+       Type: %s
+     Status: %s
+ Resolution: %s
+ Components: %s
+    Version: %s
+  Milestone: %s
+   Severity: %s
+   Priority: %s
+       Tags: %s
+   
+    Created: %s
+   Modified: %s
+
+""" % (self.title,
+       self.format_long_text(self.summary),
+
+       self.format_long_text(self.description),
+
+       self.author,
+       self.format_people_list(self.reporters),
+       self.format_people_list(self.owners),
+       self.format_people_list(self.assigned),
+       self.format_people_list(self.carbons),
+
+       self.type,
+       self.status,
+       self.resolution or "",
+       self.components or "",
+       self.version or "",
+       self.milestone or "",
+       self.severity,
+       self.priority,
+       self.tags or "",
+
+       self.created,
+       self.modified))
+
+    def dump_xml(self, fd = sys.stdout):
+        import xml.dom.minidom
+
+        doc = xml.dom.minidom.Document()
+        issue = doc.createElement("issue")
+        doc.appendChild(issue)
+
+        name = doc.createElement("name")
+        name.appendChild(doc.createTextNode(self.name))
+        issue.appendChild(name)
+
+        title = doc.createElement("title")
+        title.appendChild(doc.createTextNode(self.title))
+        issue.appendChild(title)
+
+        if self.summary:
+            summary = doc.createElement("summary")
+            summary.appendChild(doc.createTextNode(self.summary))
+            issue.appendChild(summary)
+
+        if self.description:
+            description = doc.createElement("description")
+            description.appendChild(doc.createTextNode(self.description))
+            issue.appendChild(description)
+
+        author = doc.createElement("author")
+        self.author.appendPerson(doc, author, fd)
+        issue.appendChild(author)
+
+        if self.reporters:
+            reporters = doc.createElement("reporters")
+            for reporter in self.reporters:
+                reporter.appendPerson(doc, reporters, fd)
+                reporters.appendChild(reporter)
+
+        if self.owners:
+            owners = doc.createElement("owners")
+            for owner in self.owners:
+                owner.appendPerson(doc, owners, fd)
+                owners.appendChild(owner)
+
+        if self.assigned:
+            assigned = doc.createElement("assigned")
+            for assignee in self.assigned:
+                assignee.appendPerson(doc, assigned, fd)
+                assigned.appendChild(assignee)
+
+        if self.carbons:
+            carbons = doc.createElement("carbons")
+            for carbon in self.carbons:
+                carbon.appendPerson(doc, carbons, fd)
+                carbons.appendChild(carbon)
+
+        if self.status:
+            status = doc.createElement("status")
+            status.appendChild(doc.createTextNode(self.status))
+            issue.appendChild(status)
+
+        if self.resolution:
+            resolution = doc.createElement("resolution")
+            resolution.appendChild(doc.createTextNode(self.resolution))
+            issue.appendChild(resolution)
+
+        if self.type:
+            type = doc.createElement("type")
+            type.appendChild(doc.createTextNode(self.type))
+            issue.appendChild(type)
+
+        if self.components:
+            components = doc.createElement("components")
+            for component in self.components:
+                element = doc.createElement("component")
+                element.appendChild(doc.createTextNode(component))
+                components.appendChild(element)
+
+        if self.version:
+            version = doc.createElement("version")
+            version.appendChild(doc.createTextNode(self.version))
+            issue.appendChild(version)
+
+        if self.milestone:
+            milestone = doc.createElement("milestone")
+            milestone.appendChild(doc.createTextNode(self.milestone))
+            issue.appendChild(milestone)
+
+        if self.severity:
+            severity = doc.createElement("severity")
+            severity.appendChild(doc.createTextNode(self.severity))
+            issue.appendChild(severity)
+
+        if self.priority:
+            priority = doc.createElement("priority")
+            priority.appendChild(doc.createTextNode(self.priority))
+            issue.appendChild(priority)
+
+        if self.tags:
+            tags = doc.createElement("tags")
+            for tag in self.tags:
+                element = doc.createElement("tag")
+                element.appendChild(doc.createTextNode(tag))
+                tags.appendChild(element)
+
+        created = doc.createElement("created")
+        created.appendChild(doc.createTextNode(self.created.strftime(iso_fmt)))
+        issue.appendChild(created)
+
+        if self.modified:
+            modified = doc.createElement("modified")
+            modified.appendChild(doc.createTextNode(self.modified.strftime(iso_fmt)))
+            issue.appendChild(modified)
+
+        fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
 
 class IssueSet:
     """An IssueSet refers to a group of issues.  There is always at least one
@@ -110,7 +323,10 @@ class IssueSet:
         self.issues_HEAD = new_head
 
     def current_head(self):
-        pass
+        assert False
+
+    def current_author(self):
+        assert False
 
     def read_issues(self):
         self.dirty = True
@@ -235,11 +451,17 @@ class GitIssueSet(IssueSet):
     """This object implements all the command necessary to interact with Git
     for the purpose of storing and distributing issues."""
     def __init__(self):
-        self.GIT_DIR = git('rev-parse', '--git-dir')
+        self.GIT_DIR    = None
+        self.GIT_AUTHOR = None
         IssueSet.__init__(self)
 
+    def git_directory(self):
+        if self.GIT_DIR is None:
+            self.GIT_DIR = git('rev-parse', '--git-dir')
+        return self.GIT_DIR
+
     def issues_cache_file(self):
-        return join(self.GIT_DIR, "issues")
+        return join(self.git_directory(), "issues")
 
     def create_issue_branch(self, cmd, args, kwargs):
         """If an issues branch already exists at the remote, we simply refer
@@ -252,7 +474,7 @@ class GitIssueSet(IssueSet):
                        input = "Created issues branch\n")
             hash = git('mktree', input = "100644 blob %s\tproject" % hash)
             hash = git('commit-tree', hash,
-                       input = "Created: %s" % datetime.now().strftime('%s'))
+                       input = "Created: %s" % datetime.now().strftime(iso_fmt))
 
         git('branch', 'issues', hash)
         return True
@@ -260,13 +482,19 @@ class GitIssueSet(IssueSet):
     def current_head(self):
         return git('rev-parse', 'issues', restart = self.create_issue_branch)
 
+    def current_author(self):
+        if self.GIT_AUTHOR is None:
+            self.GIT_AUTHOR = Person(git('config', 'user.name'),
+                                     git('config', 'user.email'))
+        return self.GIT_AUTHOR
+
     def read_issue(self, name):
         info = string.split(git('cat-file', 'blob', name), '\n')
         match = re.match('(.+) +<(.+)>$', info[1])
         assert match            # jww (2008-05-12): Be more resilient here
-        issue = Issue(Person(match.group(1), match.group(2)), info[2])
+        issue = Issue(self, Person(match.group(1), match.group(2)), info[2])
         issue.name    = name
-        issue.created = datetime.fromtimestamp(long(info[0]))
+        issue.created = datetime.strptime(info[0], iso_fmt)
         return issue
 
     def update_issue(self, issue):
@@ -286,9 +514,11 @@ class GitIssueSet(IssueSet):
         # Create a unique blob to represent the new issue.  This is the
         # issue's official object name from now on, and will never change.
         blob = git('hash-object', '-w', '--stdin',
-                   input = "%s\n%s\n%s\n" % (datetime.now().strftime('%s'),
+                   input = "%s\n%s\n%s\n" % (datetime.now().strftime(iso_fmt),
                                              issue.author, issue.title))
         tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
+
+        issue.name = blob
 
         # Merge this blob with existing issue blobs that share the same
         # first two hash digits
@@ -319,8 +549,9 @@ class GitIssueSet(IssueSet):
         # Reset the `issues_HEAD` global variable, then return the object
         # name of the new issue.
         self.update_head(commit)
-
-        issue.name = blob
+        self.issues[issue.name] = issue
+        issue.modified = datetime.now()
+        self.dirty = True
 
     def read_issues(self):
         ls_tree = string.split(git('ls-tree', '-r', self.head()), '\n')
@@ -379,12 +610,11 @@ if command == "list":
         issue = issueSet.issues[name]
         print "%4d  %s  %-23s %-6s %5s %6s %s" % \
             (index, issue.name[:7], issue.title, issue.status,
-             issue.created.strftime('%m/%d'), str(issue.author)[:6], '')
+             issue.created and issue.created.strftime('%m/%d'),
+             str(issue.author)[:6], '')
         index += 1
 
-    save_issues(issueSet)
-
-elif command == "show":
+elif command == "show" or command == "dump":
     if len(args) == 0:
         print "Shows needs an index or Id."
 
@@ -392,7 +622,7 @@ elif command == "show":
 
     issue = None
     try:
-        idx = int(args[0])
+        idx = int(args[0]) - 1
         issue = issueSet.issues[issueSet.issues.keys()[idx]]
     except:
         for name in issueSet.issues.keys():
@@ -401,7 +631,10 @@ elif command == "show":
                 break
 
     if issue:
-        issue.show()
+        if command == "show":
+            issue.show()
+        else:
+            issue.dump_xml()
     else:
         sys.stderr.write("There is no issue matching the identifier '%s'.\n" %
                          args[0])
@@ -409,8 +642,14 @@ elif command == "show":
 elif command == "new":
     if len(args) == 0:
         print "New needs a title."
-    #head = create_issue(args[0], "%s <%s>" % (git('config', 'user.name'),
-    #                                          git('config', 'user.email')))
-    #print "New issue %s created." % head
+
+    issue = Issue(issueSet, issueSet.current_author(), args[0])
+    issueSet.write_issue(issue)
+    print "New issue %s created." % issue.name
+
+# If any of the commands made the issueSet dirty, write out a new cache
+save_issues(issueSet)
+
+sys.exit(0)
 
 # git-issue ends here
