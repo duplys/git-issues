@@ -23,7 +23,6 @@ except:
     from StringIO import StringIO
 
 import cPickle
-import xml.dom.minidom
 
 from datetime   import datetime
 from subprocess import Popen, PIPE
@@ -44,44 +43,6 @@ class Person:
 
     def __str__(self):
         return "%s <%s>" % (self.name, self.email)
-
-    def from_xml(cls, node):
-        person = Person(node.childNodes[0].data,
-                        node.childNodes[1].data)
-        return person
-
-    from_xml = classmethod(from_xml)
-
-def to_xml(doc, parent, data):
-    if isinstance(data, datetime):
-        element = doc.createElement("datetime")
-        element.appendChild(doc.createTextNode(data.strftime(iso_fmt)))
-        parent.appendChild(element)
-
-    elif isinstance(data, Person):
-        person = doc.createElement("person")
-
-        name = doc.createElement("name")
-        name.appendChild(doc.createTextNode(data.name))
-        person.appendChild(name)
-
-        email = doc.createElement("email")
-        email.appendChild(doc.createTextNode(data.email))
-        person.appendChild(email)
-
-        parent.appendChild(person)
-
-    elif isinstance(data, list):
-        element = doc.createElement("list")
-        for child in data:
-            to_xml(doc, element, child)
-        parent.appendChild(element)
-
-    elif isinstance(data, str):
-        parent.appendChild(doc.createTextNode(data))
-
-    else:
-        assert False
 
 class Issue:
     def __init__(self, issueSet, author, title,
@@ -136,39 +97,6 @@ class Issue:
         else:
             data = [before, after]
         self.changes[field] = data
-
-    def dump_changes(self, include_header = True, fd = sys.stdout):
-        if not self.changes:
-            return
-            
-        doc = xml.dom.minidom.Document()
-        changes = doc.createElement("changes")
-        doc.appendChild(changes)
-
-        for field_name in self.changes.keys():
-            field = doc.createElement("field")
-            field.setAttribute("name", field_name)
-
-            data = self.changes[field_name]
-
-            before = doc.createElement("before")
-            to_xml(doc, before, data[0])
-            field.appendChild(before)
-
-            after = doc.createElement("after")
-            to_xml(doc, after, data[1])
-            field.appendChild(after)
-
-            changes.appendChild(field)
-
-        if include_header:
-            fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
-        else:
-            buffer = StringIO()
-            buffer.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
-            fd.write(re.sub('^.+\n', '', buffer.getvalue()))
-
-        doc.unlink()
 
     def set_author(self, author):
         self.note_change('author', self.author, author)
@@ -270,126 +198,6 @@ class Issue:
 
         return buffer.getvalue()
 
-    def from_xml(cls, issueSet, doc):
-        node   = doc.firstChild
-        name   = node.childNodes[0].data
-        author = Person.from_xml(node.childNodes[1])
-        title  = node.childNodes[2].data
-
-        issue  = Issue(issueSet, author, title)
-        issue.name  = name
-        issue.dirty = False
-        return issue
-
-    from_xml = classmethod(from_xml)
-
-    def dump_xml(self, fd = sys.stdout):
-        import xml.dom.minidom
-
-        doc = xml.dom.minidom.Document()
-        issue = doc.createElement("issue")
-        doc.appendChild(issue)
-
-        if self.name:
-            name = doc.createElement("name")
-            to_xml(doc, name, self.name)
-            issue.appendChild(name)
-
-        author = doc.createElement("author")
-        to_xml(doc, author, self.author)
-        issue.appendChild(author)
-
-        title = doc.createElement("title")
-        to_xml(doc, title, self.title)
-        issue.appendChild(title)
-
-        if self.summary:
-            summary = doc.createElement("summary")
-            to_xml(doc, summary, self.summary)
-            issue.appendChild(summary)
-
-        if self.description:
-            description = doc.createElement("description")
-            to_xml(doc, description, self.description)
-            issue.appendChild(description)
-
-        if self.reporters:
-            reporters = doc.createElement("reporters")
-            to_xml(doc, reporters, self.reporters)
-            issue.appendChild(reporters)
-
-        if self.owners:
-            owners = doc.createElement("owners")
-            to_xml(doc, owners, self.owners)
-            issue.appendChild(owners)
-
-        if self.assigned:
-            assigned = doc.createElement("assigned")
-            to_xml(doc, assigned, self.assigned)
-            issue.appendChild(assigned)
-
-        if self.carbons:
-            carbons = doc.createElement("carbons")
-            to_xml(doc, carbons, self.carbons)
-            issue.appendChild(carbons)
-
-        if self.status:
-            status = doc.createElement("status")
-            to_xml(doc, status, self.status)
-            issue.appendChild(status)
-
-        if self.resolution:
-            resolution = doc.createElement("resolution")
-            to_xml(doc, resolution, self.resolution)
-            issue.appendChild(resolution)
-
-        if self.issue_type:
-            issue_type = doc.createElement("type")
-            to_xml(doc, issue_type, self.issue_type)
-            issue.appendChild(issue_type)
-
-        if self.components:
-            components = doc.createElement("components")
-            to_xml(doc, components, self.components)
-            issue.appendChild(components)
-
-        if self.version:
-            version = doc.createElement("version")
-            to_xml(doc, version, self.version)
-            issue.appendChild(version)
-
-        if self.milestone:
-            milestone = doc.createElement("milestone")
-            to_xml(doc, milestone, self.milestone)
-            issue.appendChild(milestone)
-
-        if self.severity:
-            severity = doc.createElement("severity")
-            to_xml(doc, severity, self.severity)
-            issue.appendChild(severity)
-
-        if self.priority:
-            priority = doc.createElement("priority")
-            to_xml(doc, priority, self.priority)
-            issue.appendChild(priority)
-
-        if self.tags:
-            tags = doc.createElement("tags")
-            to_xml(doc, tags, self.tags)
-            issue.appendChild(tags)
-
-        created = doc.createElement("created")
-        to_xml(doc, created, self.created)
-        issue.appendChild(created)
-
-        if self.modified:
-            modified = doc.createElement("modified")
-            to_xml(doc, modified, self.modified)
-            issue.appendChild(modified)
-
-        fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
-        doc.unlink()
-
     def __getstate__(self):
         odict = self.__dict__.copy() # copy the dict since we change it
         del odict['changes']         # remove change log
@@ -458,60 +266,6 @@ class IssueSet:
     def issues_cache_file(self):
         assert False
     
-    def dump_xml(self, fd = sys.stdout):
-        import xml.dom.minidom
-
-        doc = xml.dom.minidom.Document()
-        set = doc.createElement("issue-set")
-        doc.appendChild(set)
-
-        created = doc.createElement("created")
-        to_xml(doc, created, self.created)
-        set.appendChild(created)
-
-        if self.statuses:
-            statuses = doc.createElement("statuses")
-            to_xml(doc, statuses, self.statuses)
-            set.appendChild(statuses)
-
-        if self.resolutions:
-            resolutions = doc.createElement("resolutions")
-            to_xml(doc, resolutions, self.resolutions)
-            set.appendChild(resolutions)
-
-        if self.issue_types:
-            issue_types = doc.createElement("types")
-            to_xml(doc, issue_types, self.issue_types)
-            set.appendChild(issue_types)
-
-        if self.components:
-            components = doc.createElement("components")
-            to_xml(doc, components, self.components)
-            set.appendChild(components)
-
-        if self.versions:
-            versions = doc.createElement("versions")
-            to_xml(doc, versions, self.versions)
-            set.appendChild(versions)
-
-        if self.milestones:
-            milestones = doc.createElement("milestones")
-            to_xml(doc, milestones, self.milestones)
-            set.appendChild(milestones)
-
-        if self.severities:
-            severities = doc.createElement("severities")
-            to_xml(doc, severities, self.severities)
-            set.appendChild(severities)
-
-        if self.priorities:
-            priorities = doc.createElement("priorities")
-            to_xml(doc, priorities, self.priorities)
-            set.appendChild(priorities)
-
-        fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
-        doc.unlink()
-
     def load_state(cls, issueSet):
         """Given a newly created IssueSet object as a template, see if we can
         restore the cached version of the data from disk, and then check whether
@@ -593,6 +347,374 @@ class IssueSet:
 
 ######################################################################
 
+import xml.dom.minidom
+
+def read_object(obj, file_descriptor):
+    return XmlReader.read(file_descriptor)
+
+def object_from_string(str):
+    return XmlReader.readString(str)
+
+class XmlReader:
+    def read(cls, fd):
+        doc = xml.dom.minidom.parse(fd)
+        data = XmlRipper.rip(doc.firstChild)
+        doc.unlink()
+        return data
+
+    read = classmethod(read)
+
+    def readString(cls, data):
+        doc = xml.dom.minidom.parseString(data)
+        data = XmlRipper.rip(doc.firstChild)
+        doc.unlink()
+        return data
+
+    readString = classmethod(readString)
+
+class XmlStringRipper:
+    def rip(cls, node):
+        return node.data
+
+    rip = classmethod(rip)
+
+class XmlListRipper:
+    def rip(cls, node):
+        assert False
+
+    rip = classmethod(rip)
+
+class XmlDateTimeRipper:
+    def rip(cls, node):
+        return datetime.strptime(node.childNodes[0].data, iso_fmt)
+
+    rip = classmethod(rip)
+
+class XmlPersonRipper:
+    def rip(cls, node):
+        person = Person(node.childNodes[0].data, node.childNodes[1].data)
+        return person
+
+    rip = classmethod(rip)
+
+class XmlIssueRipper:
+    def rip(cls, node):
+        index = 0
+        name  = None
+        if node.childNodes[0].nodeName == 'name':
+            name   = node.childNodes[0].data
+            index += 1
+
+        created = XmlRipper.rip(node.childNodes[index]); index += 1
+        author  = XmlRipper.rip(node.childNodes[index]); index += 1
+        title   = XmlRipper.rip(node.childNodes[index]); index += 1
+
+        issue = Issue(issueSet, author, title)
+        if name:
+            issue.name = name
+        issue.created = created
+        issue.dirty = False
+
+        return issue
+
+    rip = classmethod(rip)
+
+class XmlIssueSetRipper:
+    pass
+
+class XmlRipper:
+    def rip(cls, node):
+        if node.nodeType == Node.TEXT_NODE:
+            return XmlStringRipper.rip(node)
+        elif node.nodeName == 'datetime':
+            return XmlDateTimeRipper.rip(node)
+        elif node.nodeName == 'person':
+            return XmlPersonRipper.rip(node)
+        elif node.nodeName == 'list':
+            return XmlListRipper.rip(node)
+        elif node.nodeName == 'issue':
+            return XmlIssueRipper.rip(node)
+        elif node.nodeName == 'issue-set':
+            return XmlIssueSetRipper.rip(node)
+        else:
+            assert False
+
+    rip = classmethod(rip)
+
+######################################################################
+
+def write_object(obj, file_descriptor):
+    XmlWriter.write(XmlBuilder.build(obj), fd = file_descriptor)
+
+def object_to_string(obj):
+    buffer = StringIO()
+    XmlWriter.write(XmlBuilder.build(obj), fd = buffer)
+    return buffer.getvalue()
+
+class XmlWriter:
+    def write(cls, doc, no_header = False, fd = sys.stdout):
+        if no_header:
+            buffer = StringIO()
+            buffer.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+            fd.write(re.sub('^.+\n', '', buffer.getvalue()))
+        else:
+            fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+        doc.unlink()
+
+    write = classmethod(write)
+
+class XmlStringBuilder:
+    def build(cls, data, node, doc):
+        node.appendChild(doc.createTextNode(data))
+
+    build = classmethod(build)
+
+class XmlListBuilder:
+    def build(cls, data, node, doc):
+        element = doc.createElement("list")
+        for child in data:
+            XmlBuilder.build(doc, element, child)
+        node.appendChild(element)
+
+    build = classmethod(build)
+
+class XmlDateTimeBuilder:
+    def build(cls, data, node, doc):
+        element = doc.createElement("datetime")
+        element.appendChild(doc.createTextNode(data.strftime(iso_fmt)))
+        node.appendChild(element)
+
+    build = classmethod(build)
+
+class XmlPersonBuilder:
+    def build(cls, data, node, doc):
+        person = doc.createElement("person")
+
+        name = doc.createElement("name")
+        name.appendChild(doc.createTextNode(data.name))
+        person.appendChild(name)
+
+        email = doc.createElement("email")
+        email.appendChild(doc.createTextNode(data.email))
+        person.appendChild(email)
+
+        node.appendChild(person)
+
+    build = classmethod(build)
+
+class XmlIssueBuilder:
+    def build(cls, doc, node, issue):
+        issueNode = doc.createElement("issue")
+
+        if issue.name:
+            name = doc.createElement("name")
+            XmlBuilder.build(issue.name, name, doc)
+            issueNode.appendChild(name)
+
+        created = doc.createElement("created")
+        XmlBuilder.build(issue.created, created, doc)
+        issueNode.appendChild(created)
+
+        author = doc.createElement("author")
+        XmlBuilder.build(issue.author, author, doc)
+        issueNode.appendChild(author)
+
+        title = doc.createElement("title")
+        XmlBuilder.build(issue.title, title, doc)
+        issueNode.appendChild(title)
+
+        if issue.summary:
+            summary = doc.createElement("summary")
+            XmlBuilder.build(issue.summary, summary, doc)
+            issueNode.appendChild(summary)
+
+        if issue.description:
+            description = doc.createElement("description")
+            XmlBuilder.build(issue.description, description, doc)
+            issueNode.appendChild(description)
+
+        if issue.reporters:
+            reporters = doc.createElement("reporters")
+            XmlBuilder.build(issue.reporters, reporters, doc)
+            issueNode.appendChild(reporters)
+
+        if issue.owners:
+            owners = doc.createElement("owners")
+            XmlBuilder.build(issue.owners, owners, doc)
+            issueNode.appendChild(owners)
+
+        if issue.assigned:
+            assigned = doc.createElement("assigned")
+            XmlBuilder.build(issue.assigned, assigned, doc)
+            issueNode.appendChild(assigned)
+
+        if issue.carbons:
+            carbons = doc.createElement("carbons")
+            XmlBuilder.build(issue.carbons, carbons, doc)
+            issueNode.appendChild(carbons)
+
+        if issue.status:
+            status = doc.createElement("status")
+            XmlBuilder.build(issue.status, status, doc)
+            issueNode.appendChild(status)
+
+        if issue.resolution:
+            resolution = doc.createElement("resolution")
+            XmlBuilder.build(issue.resolution, resolution, doc)
+            issueNode.appendChild(resolution)
+
+        if issue.issue_type:
+            issue_type = doc.createElement("type")
+            XmlBuilder.build(issue.issue_type, issue_type, doc)
+            issueNode.appendChild(issue_type)
+
+        if issue.components:
+            components = doc.createElement("components")
+            XmlBuilder.build(issue.components, components, doc)
+            issueNode.appendChild(components)
+
+        if issue.version:
+            version = doc.createElement("version")
+            XmlBuilder.build(issue.version, version, doc)
+            issueNode.appendChild(version)
+
+        if issue.milestone:
+            milestone = doc.createElement("milestone")
+            XmlBuilder.build(issue.milestone, milestone, doc)
+            issueNode.appendChild(milestone)
+
+        if issue.severity:
+            severity = doc.createElement("severity")
+            XmlBuilder.build(issue.severity, severity, doc)
+            issueNode.appendChild(severity)
+
+        if issue.priority:
+            priority = doc.createElement("priority")
+            XmlBuilder.build(issue.priority, priority, doc)
+            issueNode.appendChild(priority)
+
+        if issue.tags:
+            tags = doc.createElement("tags")
+            XmlBuilder.build(issue.tags, tags, doc)
+            issueNode.appendChild(tags)
+
+        if issue.modified:
+            modified = doc.createElement("modified")
+            XmlBuilder.build(issue.modified, modified, doc)
+            issueNode.appendChild(modified)
+
+        node.appendChild(issueNode)
+
+    build = classmethod(build)
+
+#class XmlIssueChangesBuilder:
+#    def build(cls, data, node, doc):
+#        changes = doc.createElement("changes")
+#        doc.appendChild(changes)
+#
+#        for field_name in self.changes.keys():
+#            field = doc.createElement("field")
+#            field.setAttribute("name", field_name)
+#
+#            data = self.changes[field_name]
+#
+#            before = doc.createElement("before")
+#            XmlBuilder.build(data[0], before, doc)
+#            field.appendChild(before)
+#
+#            after = doc.createElement("after")
+#            XmlBuilder.build(data[1], after, doc)
+#            field.appendChild(after)
+#
+#            changes.appendChild(field)
+#
+#        node.appendChild(changes)
+#
+#    build = classmethod(build)
+
+class XmlIssueSetBuilder:
+    def build(cls, doc, node, issueSet):
+        set = doc.createElement("issue-set")
+
+        created = doc.createElement("created")
+        XmlBuilder.build(issueSet.created, created, doc)
+        set.appendChild(created)
+
+        if issueSet.statuses:
+            statuses = doc.createElement("statuses")
+            XmlBuilder.build(issueSet.statuses, statuses, doc)
+            set.appendChild(statuses)
+
+        if issueSet.resolutions:
+            resolutions = doc.createElement("resolutions")
+            XmlBuilder.build(issueSet.resolutions, resolutions, doc)
+            set.appendChild(resolutions)
+
+        if issueSet.issue_types:
+            issue_types = doc.createElement("types")
+            XmlBuilder.build(issueSet.issue_types, issue_types, doc)
+            set.appendChild(issue_types)
+
+        if issueSet.components:
+            components = doc.createElement("components")
+            XmlBuilder.build(issueSet.components, components, doc)
+            set.appendChild(components)
+
+        if issueSet.versions:
+            versions = doc.createElement("versions")
+            XmlBuilder.build(issueSet.versions, versions, doc)
+            set.appendChild(versions)
+
+        if issueSet.milestones:
+            milestones = doc.createElement("milestones")
+            XmlBuilder.build(issueSet.milestones, milestones, doc)
+            set.appendChild(milestones)
+
+        if issueSet.severities:
+            severities = doc.createElement("severities")
+            XmlBuilder.build(issueSet.severities, severities, doc)
+            set.appendChild(severities)
+
+        if issueSet.priorities:
+            priorities = doc.createElement("priorities")
+            XmlBuilder.build(issueSet.priorities, priorities, doc)
+            set.appendChild(priorities)
+
+        node.appendChild(set)
+
+    build = classmethod(build)
+
+class XmlBuilder:
+    def build(cls, data, node = None, doc = None):
+        if isinstance(data, datetime):
+            assert doc
+            XmlDateTimeBuilder.build(data, node, doc)
+        elif isinstance(data, Person):
+            assert doc
+            XmlPersonBuilder.build(data, node, doc)
+        elif isinstance(data, list):
+            assert doc
+            XmlListBuilder.build(data, node, doc)
+        elif isinstance(data, str):
+            assert doc
+            XmlStringBuilder.build(data, node, doc)
+        elif isinstance(data, Issue):
+            assert not doc
+            doc = xml.dom.minidom.Document()
+            XmlIssueBuilder.build(data, doc, doc)
+        elif isinstance(data, IssueSet):
+            assert not doc
+            doc = xml.dom.minidom.Document()
+            XmlIssueSetBuilder.build(data, doc, doc)
+        else:
+            assert False
+
+        return doc
+
+    build = classmethod(build)
+
+######################################################################
+
 # Utility function for calling out to Git (this script does not try to
 # be a Git library, just an interface to the underlying commands).  It
 # supports a 'restart' keyword, which will cause a Python function to
@@ -664,11 +786,7 @@ class GitIssueSet(IssueSet):
             hash = git('hash-object', '-w', '--stdin',
                        input = "Created issues branch\n")
             hash = git('mktree', input = "100644 blob %s\tproject\n" % hash)
-
-            buffer = StringIO()
-            self.dump_xml(buffer)
-            hash = git('commit-tree', hash, input = buffer.getvalue())
-            del buffer
+            hash = git('commit-tree', hash, input = object_to_string(self))
 
         git('branch', 'issues', hash)
         return True
@@ -685,9 +803,7 @@ class GitIssueSet(IssueSet):
     def read_issue(self, name):
         data = git('cat-file', 'blob', '%s/%s/info' % (name[:2], name[2:]),
                    no_stderr = True)
-        doc = xml.dom.minidom.parseString(data)
-        issue = Issue.from_xml(doc)
-        doc.unlink()
+        issue = object_from_string(data)
         return issue
 
     def update_issue(self, issue):
@@ -704,10 +820,8 @@ class GitIssueSet(IssueSet):
 
         # Create a unique blob to represent the new issue.  This is the
         # issue's official object name from now on, and will never change.
-        buffer = StringIO()
-        issue.dump_xml(buffer)
-        blob = git('hash-object', '-w', '--stdin', input = buffer.getvalue())
-        del buffer
+        blob = git('hash-object', '-w', '--stdin',
+                   input = object_to_string(issue))
         issue.name = blob
 
         tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
@@ -882,7 +996,7 @@ Description: %s
        issue.created,
        issue.modified))
     else:
-        issue.dump_xml()
+        write_object(issue)
 
 ######################################################################
 
