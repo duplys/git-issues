@@ -503,7 +503,7 @@ class XmlPersonBuilder:
     build = classmethod(build)
 
 class XmlIssueBuilder:
-    def build(cls, issue, doc, node):
+    def build(cls, issue, node, doc):
         issueNode = doc.createElement("issue")
 
         if issue.name:
@@ -633,7 +633,7 @@ class XmlIssueBuilder:
 #    build = classmethod(build)
 
 class XmlIssueSetBuilder:
-    def build(cls, issueSet, doc, node):
+    def build(cls, issueSet, node, doc):
         set = doc.createElement("issue-set")
 
         created = doc.createElement("created")
