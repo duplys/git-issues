@@ -36,6 +36,14 @@ cache_version = 9
 
 ######################################################################
 
+# You may wonder what dirtiness means below.  Here's the deal:
+#
+# An object is "self-dirty" if it itself has been changed, but possibly none
+# of its children.  An object is "dirty" if its children have been changed,
+# but possibly not itself.  Any dirtiness is cause for rewriting the object
+# cache; only self-dirtiness of specific objects will cause the repository to
+# be updated.
+
 class Person:
     def __init__(self, name, email):
         self.name  = name
@@ -43,6 +51,30 @@ class Person:
 
     def __str__(self):
         return "%s <%s>" % (self.name, self.email)
+
+class Comment:
+    def __init__(self, issue, author, comment):
+        self.issue       = issue
+        self.author      = author
+        self.comment     = comment
+        self.created     = datetime.now()
+        self.modified    = None
+        self.self_dirty  = True
+        self.attachments = []   # records filename and blob
+
+    def mark_dirty(self):
+        self.modified   = datetime.now()
+        self.self_dirty = True
+        self.issue.mark_dirty(False)
+
+    def __getstate__(self):
+        odict = self.__dict__.copy() # copy the dict since we change it
+        del odict['self_dirty']      # remove self dirty flag
+        return odict
+
+    def __setstate__(self,dict):
+        self.__dict__.update(dict)   # update attributes
+        self.self_dirty = False
 
 class Issue:
     def __init__(self, issueSet, author, title,
@@ -83,12 +115,16 @@ class Issue:
         self.created     = datetime.now()
         self.modified    = None
         self.changes     = {}
-        self.dirty       = True
+        self.dirty       = False
+        self.self_dirty  = True
+        self.comments    = {}
 
-    def mark_dirty(self):
-        self.modified       = datetime.now()
-        self.dirty          = True
-        self.issueSet.dirty = True
+    def mark_dirty(self, self_dirty):
+        self.dirty = True
+        if self_dirty:
+            self.self_dirty = True
+            self.modified   = datetime.now()
+        self.issueSet.mark_dirty(False)
 
     def note_change(self, field, before, after):
         if self.changes.has_key(field):
@@ -202,12 +238,14 @@ class Issue:
         odict = self.__dict__.copy() # copy the dict since we change it
         del odict['changes']         # remove change log
         del odict['dirty']           # remove dirty flag
+        del odict['self_dirty']      # remove self dirty flag
         return odict
 
     def __setstate__(self,dict):
         self.__dict__.update(dict)   # update attributes
         self.changes = {}
-        self.dirty   = False
+        self.dirty      = False
+        self.self_dirty = False
 
 class IssueSet:
     """An IssueSet refers to a group of issues.  There is always at least one
@@ -230,8 +268,16 @@ class IssueSet:
         self.issues        = {}
         self.issues_HEAD   = None
         self.dirty         = False
+        self.self_dirty    = True
         self.cache_version = cache_version
         self.created       = datetime.now()
+        self.modified      = None
+
+    def mark_dirty(self, self_dirty):
+        self.dirty = True
+        if self_dirty:
+            self.modified   = datetime.now()
+            self.self_dirty = True
 
     def head(self):
         if not self.issues_HEAD:
@@ -242,7 +288,7 @@ class IssueSet:
         # Update the HEAD of the issues branch to point to the new_head
         git('update-ref', 'refs/heads/issues', new_head, self.current_head())
         self.issues_HEAD = new_head
-        self.dirty       = True
+        self.mark_dirty(False)
 
     def current_head(self):
         assert False
@@ -258,7 +304,6 @@ class IssueSet:
 
     def add_issue(self, issue):
         self.issues[issue.name] = issue
-        self.dirty = True
 
     def read_issue(self, name):
         assert False
@@ -304,9 +349,12 @@ class IssueSet:
             if options.verbose:
                 print "Cache: No longer valid, throwing it away"
 
-        # We can't use or rely on the cache, so read all details from disk
+        # We can't use or rely on the cache, so read all details from disk and
+        # then mark the IssueSet dirty so that it gets saved back again when
+        # we exit.
         issueSet.read_project()
         issueSet.read_issues()
+        issueSet.mark_dirty(False)
 
         return issueSet
 
@@ -318,7 +366,7 @@ class IssueSet:
         if self.dirty:
             for name in self.issues.keys():
                 issue = self.issues[name]
-                if issue.dirty:
+                if issue.self_dirty:
                     if issue.name:
                         self.update_issue(issue)
                     else:
@@ -337,15 +385,6 @@ class IssueSet:
                 fd.close()
 
             self.dirty = False
-
-    def __getstate__(self):
-        odict = self.__dict__.copy() # copy the dict since we change it
-        del odict['dirty']           # remove dirty flag
-        return odict
-
-    def __setstate__(self,dict):
-        self.__dict__.update(dict)   # update attributes
-        self.dirty   = False
 
 ######################################################################
 
@@ -408,7 +447,7 @@ class XmlIssueRipper:
 
         issue = Issue(None, author, title)
         issue.created = created
-        issue.dirty = False
+        issue.dirty   = False
 
         return issue
 
@@ -647,6 +686,10 @@ class XmlIssueSetBuilder:
         priorities = doc.createElement("priorities")
         XmlBuilder.build(issueSet.priorities, priorities, doc)
         set.appendChild(priorities)
+
+        modified = doc.createElement("modified")
+        XmlBuilder.build(issueSet.modified, modified, doc)
+        set.appendChild(modified)
 
         node.appendChild(set)
 
@@ -1010,6 +1053,7 @@ elif command == "new":
 
     issue = Issue(issueSet, issueSet.current_author(), args[0])
     issueSet.add_issue(issue)
+    issue.mark_dirty(True)
 
 ######################################################################
 
