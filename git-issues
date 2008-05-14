@@ -239,6 +239,8 @@ class IssueSet:
         return self.issues_HEAD
 
     def update_head(self, new_head):
+        # Update the HEAD of the issues branch to point to the new_head
+        git('update-ref', 'refs/heads/issues', new_head, self.current_head())
         self.issues_HEAD = new_head
         self.dirty       = True
 
@@ -374,7 +376,7 @@ class XmlReader:
 
 class XmlStringRipper:
     def rip(cls, node):
-        return node.data
+        return node.data[1:-1]
 
     rip = classmethod(rip)
 
@@ -386,32 +388,25 @@ class XmlListRipper:
 
 class XmlDateTimeRipper:
     def rip(cls, node):
-        return datetime.strptime(node.childNodes[0].data, iso_fmt)
+        return datetime.strptime(node.childNodes[0].data[1:-1], iso_fmt)
 
     rip = classmethod(rip)
 
 class XmlPersonRipper:
     def rip(cls, node):
-        person = Person(node.childNodes[0].data, node.childNodes[1].data)
+        person = Person(node.childNodes[1].childNodes[0].data[1:-1],
+                        node.childNodes[3].childNodes[0].data[1:-1])
         return person
 
     rip = classmethod(rip)
 
 class XmlIssueRipper:
     def rip(cls, node):
-        index = 0
-        name  = None
-        if node.childNodes[0].nodeName == 'name':
-            name   = node.childNodes[0].data
-            index += 1
+        created = XmlRipper.rip(node.childNodes[1].childNodes[1])
+        author  = XmlRipper.rip(node.childNodes[3].childNodes[1])
+        title   = XmlRipper.rip(node.childNodes[5].firstChild)
 
-        created = XmlRipper.rip(node.childNodes[index]); index += 1
-        author  = XmlRipper.rip(node.childNodes[index]); index += 1
-        title   = XmlRipper.rip(node.childNodes[index]); index += 1
-
-        issue = Issue(issueSet, author, title)
-        if name:
-            issue.name = name
+        issue = Issue(None, author, title)
         issue.created = created
         issue.dirty = False
 
@@ -424,7 +419,7 @@ class XmlIssueSetRipper:
 
 class XmlRipper:
     def rip(cls, node):
-        if node.nodeType == Node.TEXT_NODE:
+        if node.nodeType == xml.dom.minidom.Node.TEXT_NODE:
             return XmlStringRipper.rip(node)
         elif node.nodeName == 'datetime':
             return XmlDateTimeRipper.rip(node)
@@ -437,13 +432,15 @@ class XmlRipper:
         elif node.nodeName == 'issue-set':
             return XmlIssueSetRipper.rip(node)
         else:
+            print node.nodeType
+            print node.nodeName
             assert False
 
     rip = classmethod(rip)
 
 ######################################################################
 
-def write_object(obj, file_descriptor):
+def write_object(obj, file_descriptor = sys.stdout):
     XmlWriter.write(XmlBuilder.build(obj), fd = file_descriptor)
 
 def object_to_string(obj):
@@ -506,11 +503,6 @@ class XmlIssueBuilder:
     def build(cls, issue, node, doc):
         issueNode = doc.createElement("issue")
 
-        if issue.name:
-            name = doc.createElement("name")
-            XmlBuilder.build(issue.name, name, doc)
-            issueNode.appendChild(name)
-
         created = doc.createElement("created")
         XmlBuilder.build(issue.created, created, doc)
         issueNode.appendChild(created)
@@ -523,85 +515,69 @@ class XmlIssueBuilder:
         XmlBuilder.build(issue.title, title, doc)
         issueNode.appendChild(title)
 
-        if issue.summary:
-            summary = doc.createElement("summary")
-            XmlBuilder.build(issue.summary, summary, doc)
-            issueNode.appendChild(summary)
+        summary = doc.createElement("summary")
+        XmlBuilder.build(issue.summary, summary, doc)
+        issueNode.appendChild(summary)
 
-        if issue.description:
-            description = doc.createElement("description")
-            XmlBuilder.build(issue.description, description, doc)
-            issueNode.appendChild(description)
+        description = doc.createElement("description")
+        XmlBuilder.build(issue.description, description, doc)
+        issueNode.appendChild(description)
 
-        if issue.reporters:
-            reporters = doc.createElement("reporters")
-            XmlBuilder.build(issue.reporters, reporters, doc)
-            issueNode.appendChild(reporters)
+        reporters = doc.createElement("reporters")
+        XmlBuilder.build(issue.reporters, reporters, doc)
+        issueNode.appendChild(reporters)
 
-        if issue.owners:
-            owners = doc.createElement("owners")
-            XmlBuilder.build(issue.owners, owners, doc)
-            issueNode.appendChild(owners)
+        owners = doc.createElement("owners")
+        XmlBuilder.build(issue.owners, owners, doc)
+        issueNode.appendChild(owners)
 
-        if issue.assigned:
-            assigned = doc.createElement("assigned")
-            XmlBuilder.build(issue.assigned, assigned, doc)
-            issueNode.appendChild(assigned)
+        assigned = doc.createElement("assigned")
+        XmlBuilder.build(issue.assigned, assigned, doc)
+        issueNode.appendChild(assigned)
 
-        if issue.carbons:
-            carbons = doc.createElement("carbons")
-            XmlBuilder.build(issue.carbons, carbons, doc)
-            issueNode.appendChild(carbons)
+        carbons = doc.createElement("carbons")
+        XmlBuilder.build(issue.carbons, carbons, doc)
+        issueNode.appendChild(carbons)
 
-        if issue.status:
-            status = doc.createElement("status")
-            XmlBuilder.build(issue.status, status, doc)
-            issueNode.appendChild(status)
+        status = doc.createElement("status")
+        XmlBuilder.build(issue.status, status, doc)
+        issueNode.appendChild(status)
 
-        if issue.resolution:
-            resolution = doc.createElement("resolution")
-            XmlBuilder.build(issue.resolution, resolution, doc)
-            issueNode.appendChild(resolution)
+        resolution = doc.createElement("resolution")
+        XmlBuilder.build(issue.resolution, resolution, doc)
+        issueNode.appendChild(resolution)
 
-        if issue.issue_type:
-            issue_type = doc.createElement("type")
-            XmlBuilder.build(issue.issue_type, issue_type, doc)
-            issueNode.appendChild(issue_type)
+        issue_type = doc.createElement("type")
+        XmlBuilder.build(issue.issue_type, issue_type, doc)
+        issueNode.appendChild(issue_type)
 
-        if issue.components:
-            components = doc.createElement("components")
-            XmlBuilder.build(issue.components, components, doc)
-            issueNode.appendChild(components)
+        components = doc.createElement("components")
+        XmlBuilder.build(issue.components, components, doc)
+        issueNode.appendChild(components)
 
-        if issue.version:
-            version = doc.createElement("version")
-            XmlBuilder.build(issue.version, version, doc)
-            issueNode.appendChild(version)
+        version = doc.createElement("version")
+        XmlBuilder.build(issue.version, version, doc)
+        issueNode.appendChild(version)
 
-        if issue.milestone:
-            milestone = doc.createElement("milestone")
-            XmlBuilder.build(issue.milestone, milestone, doc)
-            issueNode.appendChild(milestone)
+        milestone = doc.createElement("milestone")
+        XmlBuilder.build(issue.milestone, milestone, doc)
+        issueNode.appendChild(milestone)
 
-        if issue.severity:
-            severity = doc.createElement("severity")
-            XmlBuilder.build(issue.severity, severity, doc)
-            issueNode.appendChild(severity)
+        severity = doc.createElement("severity")
+        XmlBuilder.build(issue.severity, severity, doc)
+        issueNode.appendChild(severity)
 
-        if issue.priority:
-            priority = doc.createElement("priority")
-            XmlBuilder.build(issue.priority, priority, doc)
-            issueNode.appendChild(priority)
+        priority = doc.createElement("priority")
+        XmlBuilder.build(issue.priority, priority, doc)
+        issueNode.appendChild(priority)
 
-        if issue.tags:
-            tags = doc.createElement("tags")
-            XmlBuilder.build(issue.tags, tags, doc)
-            issueNode.appendChild(tags)
+        tags = doc.createElement("tags")
+        XmlBuilder.build(issue.tags, tags, doc)
+        issueNode.appendChild(tags)
 
-        if issue.modified:
-            modified = doc.createElement("modified")
-            XmlBuilder.build(issue.modified, modified, doc)
-            issueNode.appendChild(modified)
+        modified = doc.createElement("modified")
+        XmlBuilder.build(issue.modified, modified, doc)
+        issueNode.appendChild(modified)
 
         node.appendChild(issueNode)
 
@@ -640,45 +616,37 @@ class XmlIssueSetBuilder:
         XmlBuilder.build(issueSet.created, created, doc)
         set.appendChild(created)
 
-        if issueSet.statuses:
-            statuses = doc.createElement("statuses")
-            XmlBuilder.build(issueSet.statuses, statuses, doc)
-            set.appendChild(statuses)
+        statuses = doc.createElement("statuses")
+        XmlBuilder.build(issueSet.statuses, statuses, doc)
+        set.appendChild(statuses)
 
-        if issueSet.resolutions:
-            resolutions = doc.createElement("resolutions")
-            XmlBuilder.build(issueSet.resolutions, resolutions, doc)
-            set.appendChild(resolutions)
+        resolutions = doc.createElement("resolutions")
+        XmlBuilder.build(issueSet.resolutions, resolutions, doc)
+        set.appendChild(resolutions)
 
-        if issueSet.issue_types:
-            issue_types = doc.createElement("types")
-            XmlBuilder.build(issueSet.issue_types, issue_types, doc)
-            set.appendChild(issue_types)
+        issue_types = doc.createElement("types")
+        XmlBuilder.build(issueSet.issue_types, issue_types, doc)
+        set.appendChild(issue_types)
 
-        if issueSet.components:
-            components = doc.createElement("components")
-            XmlBuilder.build(issueSet.components, components, doc)
-            set.appendChild(components)
+        components = doc.createElement("components")
+        XmlBuilder.build(issueSet.components, components, doc)
+        set.appendChild(components)
 
-        if issueSet.versions:
-            versions = doc.createElement("versions")
-            XmlBuilder.build(issueSet.versions, versions, doc)
-            set.appendChild(versions)
+        versions = doc.createElement("versions")
+        XmlBuilder.build(issueSet.versions, versions, doc)
+        set.appendChild(versions)
 
-        if issueSet.milestones:
-            milestones = doc.createElement("milestones")
-            XmlBuilder.build(issueSet.milestones, milestones, doc)
-            set.appendChild(milestones)
+        milestones = doc.createElement("milestones")
+        XmlBuilder.build(issueSet.milestones, milestones, doc)
+        set.appendChild(milestones)
 
-        if issueSet.severities:
-            severities = doc.createElement("severities")
-            XmlBuilder.build(issueSet.severities, severities, doc)
-            set.appendChild(severities)
+        severities = doc.createElement("severities")
+        XmlBuilder.build(issueSet.severities, severities, doc)
+        set.appendChild(severities)
 
-        if issueSet.priorities:
-            priorities = doc.createElement("priorities")
-            XmlBuilder.build(issueSet.priorities, priorities, doc)
-            set.appendChild(priorities)
+        priorities = doc.createElement("priorities")
+        XmlBuilder.build(issueSet.priorities, priorities, doc)
+        set.appendChild(priorities)
 
         node.appendChild(set)
 
@@ -686,7 +654,9 @@ class XmlIssueSetBuilder:
 
 class XmlBuilder:
     def build(cls, data, node = None, doc = None):
-        if isinstance(data, datetime):
+        if data is None:
+            pass
+        elif isinstance(data, datetime):
             assert doc
             XmlDateTimeBuilder.build(data, node, doc)
         elif isinstance(data, Person):
@@ -763,9 +733,12 @@ def git(cmd, *args, **kwargs):
 class GitIssueSet(IssueSet):
     """This object implements all the command necessary to interact with Git
     for the purpose of storing and distributing issues."""
+    ls_tree_pat = re.compile('(040000 tree|100644 blob) ([0-9a-f]{40})\t(project|([0-9a-f]{2})(/([0-9a-f]{38})(/(.+))?)?)$')
+
     def __init__(self):
         self.GIT_DIR    = None
         self.GIT_AUTHOR = None
+        self.trees      = {}
         IssueSet.__init__(self)
 
     def git_directory(self):
@@ -801,13 +774,15 @@ class GitIssueSet(IssueSet):
         return self.GIT_AUTHOR
 
     def read_issue(self, name):
-        data = git('cat-file', 'blob', '%s/%s/info' % (name[:2], name[2:]),
-                   no_stderr = True)
+        hash = git('rev-parse', 'issues:%s/%s/info' % (name[:2], name[2:]))
+        data = git('cat-file', 'blob', hash)
         issue = object_from_string(data)
+        issue.name     = name
+        issue.issueSet = self
         return issue
 
     def update_issue(self, issue):
-        pass
+        print "Updated issue %s" % issue.name
 
     def write_issue(self, issue):
         """Create a new issue in the tracking database by building a commit
@@ -828,51 +803,69 @@ class GitIssueSet(IssueSet):
 
         # Merge this blob with existing issue blobs that share the same
         # first two hash digits
-        ls_tree = git('ls-tree', '-r', self.head(), '--', blob[:2])
-        ls_tree = re.sub('\t%s/' % blob[:2], '\t', ls_tree)
-        if ls_tree: ls_tree += '\n'
+        if self.trees.has_key(blob[:2]):
+            parent = self.trees[blob[:2]]
+        else:
+            parent = [None]
+            self.trees[blob[:2]] = parent
+        parent.append((tree, blob[2:]))
 
-        tree = git('mktree', input =
-                   (ls_tree + "040000 tree %s\t%s\n" % (tree, blob[2:])))
+        buffer = StringIO()
+        for child in parent[1:]:
+            buffer.write("040000 tree %s\t%s\n" % (child[0], child[1]))
+
+        tree = git('mktree', input = buffer.getvalue())
+
+        self.trees[blob[:2]][0] = tree
 
         # Merge it into the tree of issues overall
-        ls_tree = git('ls-tree', self.head())
-        ls_tree = re.sub('040000 tree [0-9a-f]{40}\t%s\n' % blob[:2],
-                         '', ls_tree)
-        if ls_tree: ls_tree += '\n'
+        keys = self.trees.keys()
+        keys.sort()
 
-        tree = git('mktree', input =
-                   (ls_tree + "040000 tree %s\t%s\n" % (tree, blob[:2])))
+        buffer = StringIO()
+        for key in keys:
+            buffer.write("040000 tree %s\t%s\n" % (self.trees[key][0], key))
+
+        tree = git('mktree', input = buffer.getvalue())
 
         # Commit the merged tree (though at this moment it's a dangling commit)
-        commit = git('commit-tree', tree, '-p', self.head(),
+        commit = git('commit-tree', tree, '-p', self.current_head(),
                      input = issue.title)
 
-        # Update the HEAD of the issues branch to point to the commit we
-        # just made.
-        git('update-ref', 'refs/heads/issues', commit, self.head())
-
-        # Reset the `issues_HEAD` global variable, then return the object
-        # name of the new issue.
+        # Update the head of the issues branch to point to the new commit
         self.update_head(commit)
 
+        print "Created issue %s" % issue.name
+
     def read_issues(self):
-        ls_tree = string.split(git('ls-tree', '-r', self.head()), '\n')
+        print "Reading issues list from repository..."
+
+        ls_tree = string.split(git('ls-tree', '-r', '-t', '-z',
+                                   self.head()), '\0')
 
         self.issues = {}        # clear any existing data
+        self.trees  = {}
 
         for line in ls_tree:
-            match = re.match('100644 blob ([0-9a-f]{40})\t(project|([0-9a-f]{2})/([0-9a-f]{38})/info)',
-                             line)
+            match = self.ls_tree_pat.match(line)
             assert match
 
-            if match.group(2) == 'project':
+            hash = match.group(2)
+            path = match.group(3)
+
+            if match.group(1) == "040000 tree":
+                if len(path) == 2:
+                    self.trees[path] = [hash]
+                else:
+                    self.trees[match.group(4)].append((hash, match.group(6)))
+
+            elif path == 'project':
                 break
 
-            hash = match.group(1)
-            assert hash == match.group(3) + match.group(4)
+            else:
+                assert hash == match.group(4) + match.group(6)
 
-            self.add_issue(self.read_issue(hash))
+                self.add_issue(self.read_issue(hash))
 
         return self.issues
 
