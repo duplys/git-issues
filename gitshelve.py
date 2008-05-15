@@ -224,6 +224,9 @@ class gitshelve(dict):
     def get_blob(self, name):
         return git('cat-file', 'blob', name, keep_newline = True)
 
+    def hash_blob(self, data):
+        return git('hash-object', '--stdin', input = data)
+
     def make_blob(self, data):
         return git('hash-object', '-w', '--stdin', input = data)
 

@@ -128,6 +128,9 @@ class Issue:
             self.modified   = datetime.now()
         self.issueSet.mark_dirty(self_dirty = False)
 
+    def get_name(self):
+        assert False
+
     def note_change(self, field, before, after):
         if self.changes.has_key(field):
             data = self.changes[field]
@@ -260,7 +263,8 @@ class IssueSet:
         return issue
 
     def issue_path(self, issue):
-        return '%s/%s/issue.xml' % (issue.name[:2], issue.name[2:])
+        name = issue.get_name()
+        return '%s/%s/issue.xml' % (name[:2], name[2:])
 
     def add_issue(self, issue):
         self.shelf[self.issue_path(issue)] = issue
@@ -695,7 +699,16 @@ class XmlBuilder:
 
 ######################################################################
 
-class GitIssue(Issue, gitshelve.gitbook):
+class GitIssue(Issue):
+    def get_name(self):
+        if not self.name:
+            hash_func = self.issueSet.shelf.hash_blob
+            name = hash_func(str(self.created) + str(self.author) +
+                             self.title)
+            self.name = name
+        return self.name
+
+class xml_gitbook(gitshelve.gitbook):
     def serialize_data(self):
         return object_to_string(self.data)
 
@@ -708,7 +721,8 @@ class GitIssueSet(IssueSet):
     def __init__(self):
         self.GIT_DIR    = None
         self.GIT_AUTHOR = None
-        IssueSet.__init__(self, gitshelve.open('issues', book_type = GitIssue))
+        IssueSet.__init__(self, gitshelve.open('issues',
+                                               book_type = xml_gitbook))
 
     def git_directory(self):
         if self.GIT_DIR is None:
@@ -801,7 +815,7 @@ if __name__ == '__main__':
 
         index = 1
         for item in issueSet.shelf.iteritems():
-            issue = item[1]
+            issue = item[1].get_data()
             print "%4d  %s  %-23s %-6s %5s %6s %s" % \
                 (index, issue.name[:7], issue.title, issue.status,
                  issue.created and issue.created.strftime('%m/%d'),
