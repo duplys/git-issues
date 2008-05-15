@@ -29,7 +29,6 @@
 # directory 'foo/bar'.  Running 'git log' will show the change you made.
 
 import re
-import string
 import os.path
 
 try:
@@ -38,6 +37,7 @@ except:
     from StringIO import StringIO
 
 from subprocess import Popen, PIPE
+from string import split, join
 
 ######################################################################
 
@@ -60,12 +60,14 @@ class GitError(Exception):
         self.args = args
         self.kwargs = kwargs
         self.stderr = stderr
+        Exception.__init__(self)
 
     def __str__(self):
         if self.stderr:
-             return "Git command failed: git-%s %s: %s" % (self.cmd, self.args, self.stderr)
+            return "Git command failed: git-%s %s: %s" % \
+                (self.cmd, self.args, self.stderr)
         else:
-             return "Git command failed: git-%s %s" % (self.cmd, self.args)
+            return "Git command failed: git-%s %s" % (self.cmd, self.args)
 
 def git(cmd, *args, **kwargs):
     restart = True
@@ -75,7 +77,7 @@ def git(cmd, *args, **kwargs):
             stdin_mode = PIPE
 
         if verbose:
-            print "Command: git-%s %s" % (cmd, string.join(args, ' '))
+            print "Command: git-%s %s" % (cmd, join(args, ' '))
             if kwargs.has_key('input'):
                 print "Input: <<EOF"
                 print kwargs['input'],
@@ -107,22 +109,22 @@ def git(cmd, *args, **kwargs):
 class gitbook:
     """Abstracts a reference to a data file within a Git repository.  It also
     maintains knowledge of whether the object has been modified or not."""
-    def __init__(self, shelf, path, hash = None):
+    def __init__(self, shelf, path, name = None):
         self.shelf = shelf
         self.path  = path
-        self.hash  = hash
+        self.name  = name
         self.data  = None
         self.dirty = False
 
     def get_data(self):
         if self.data is None:
-            assert self.hash is not None
-            self.data = self.deserialize_data(self.shelf.get_blob(self.hash))
+            assert self.name is not None
+            self.data = self.deserialize_data(self.shelf.get_blob(self.name))
         return self.data
         
     def set_data(self, data):
         if data != self.data:
-            self.hash  = None
+            self.name  = None
             self.data  = data
             self.dirty = True
 
@@ -140,8 +142,8 @@ class gitbook:
         del odict['dirty']           # remove dirty flag
         return odict
 
-    def __setstate__(self,dict):
-        self.__dict__.update(dict)   # update attributes
+    def __setstate__(self, ndict):
+        self.__dict__.update(ndict) # update attributes
         self.dirty = False
 
 
@@ -155,10 +157,15 @@ class gitshelve(dict):
     other Git users, nor does it support merging)."""
     ls_tree_pat = re.compile('(040000 tree|100644 blob) ([0-9a-f]{40})\t(start|(.+))$')
 
+    head      = None
+    dirty     = False
+    objects   = {}
+
     def __init__(self, branch, book_type = gitbook):
         self.branch    = branch
         self.book_type = book_type
         self.init_data()
+        dict.__init__(self)
 
     def init_data(self):
         self.head      = None
@@ -185,27 +192,27 @@ class gitshelve(dict):
         if not self.head:
             return
 
-        ls_tree = string.split(git('ls-tree', '-r', '-t', '-z', self.head),
+        ls_tree = split(git('ls-tree', '-r', '-t', '-z', self.head),
                                '\0')
         for line in ls_tree:
             match = self.ls_tree_pat.match(line)
             assert match
 
             treep = match.group(1) == "040000 tree"
-            hash  = match.group(2)
+            name  = match.group(2)
             path  = match.group(3)
 
-            parts = string.split(path, os.sep)
-            dict  = self.objects
+            parts = split(path, os.sep)
+            d     = self.objects
             for part in parts:
-                if not dict.has_key(part):
-                    dict[part] = {}
-                dict = dict[part]
+                if not d.has_key(part):
+                    d[part] = {}
+                d = d[part]
 
             if treep:
-                dict['__root__'] = hash
+                d['__root__'] = name
             else:
-                dict['__book__'] = self.book_type(self, path, hash)
+                d['__book__'] = self.book_type(self, path, name)
 
     def open(cls, branch, book_type = gitbook):
         shelf = gitshelve(branch, book_type)
@@ -214,14 +221,14 @@ class gitshelve(dict):
 
     open = classmethod(open)
 
-    def get_blob(self, hash):
-        return git('cat-file', 'blob', hash, keep_newline = True)
+    def get_blob(self, name):
+        return git('cat-file', 'blob', name, keep_newline = True)
 
     def make_blob(self, data):
         return git('hash-object', '-w', '--stdin', input = data)
 
     def make_tree(self, objects, comment_accumulator = None):
-        buffer = StringIO()
+        buf = StringIO()
 
         root = None
         if objects.has_key('__root__'):
@@ -230,51 +237,51 @@ class gitshelve(dict):
         for path in objects.keys():
             if path == '__root__': continue
 
-            object = objects[path]
-            assert isinstance(object, dict)
+            obj = objects[path]
+            assert isinstance(obj, dict)
 
-            if len(object.keys()) == 1 and object.has_key('__book__'):
-                book = object['__book__']
+            if len(obj.keys()) == 1 and obj.has_key('__book__'):
+                book = obj['__book__']
                 if book.dirty:
                     if comment_accumulator:
                         comment = book.change_comment()
                         if comment:
                             comment_accumulator.write(comment)
 
-                    book.hash  = self.make_blob(book.serialize_data())
+                    book.name  = self.make_blob(book.serialize_data())
                     book.dirty = False
                     root = None
 
-                buffer.write("100644 blob %s\t%s\0" % (book.hash, path))
+                buf.write("100644 blob %s\t%s\0" % (book.name, path))
 
             else:
                 tree_root = None
-                if object.has_key('__root__'):
-                    tree_root = object['__root__']
+                if obj.has_key('__root__'):
+                    tree_root = obj['__root__']
 
-                tree_hash = self.make_tree(object, comment_accumulator)
-                if tree_hash != tree_root:
+                tree_name = self.make_tree(obj, comment_accumulator)
+                if tree_name != tree_root:
                     root = None
 
-                buffer.write("040000 tree %s\t%s\0" % (tree_hash, path))
+                buf.write("040000 tree %s\t%s\0" % (tree_name, path))
 
         if root is None:
-            hash = git('mktree', '-z', input = buffer.getvalue())
-            objects['__root__'] = hash
-            return hash
+            name = git('mktree', '-z', input = buf.getvalue())
+            objects['__root__'] = name
+            return name
         else:
             return root
 
-    def make_commit(self, tree_hash, comment):
+    def make_commit(self, tree_name, comment):
         if not comment: comment = ""
         if self.head:
-            hash = git('commit-tree', tree_hash, '-p', self.head,
+            name = git('commit-tree', tree_name, '-p', self.head,
                        input = comment)
         else:
-            hash = git('commit-tree', tree_hash, input = comment)
+            name = git('commit-tree', tree_name, input = comment)
 
-        self.update_head(hash)
-        return hash
+        self.update_head(name)
+        return name
 
     def commit(self, comment = None):
         if not self.dirty:
@@ -289,10 +296,10 @@ class gitshelve(dict):
         tree = self.make_tree(self.objects, accumulator)
         if accumulator:
             comment = accumulator.getvalue()
-        hash = self.make_commit(tree, comment)
+        name = self.make_commit(tree, comment)
 
         self.dirty = False
-        return hash
+        return name
 
     def sync(self):
         self.commit()
@@ -318,8 +325,8 @@ class gitshelve(dict):
 
             if objects[key].has_key('__book__'):
                 book = objects[key]['__book__']
-                if book.hash:
-                    kind = 'blob ' + book.hash
+                if book.name:
+                    kind = 'blob ' + book.name
                 else:
                     kind = 'blob'
             else:
@@ -334,32 +341,32 @@ class gitshelve(dict):
                 self.dump_objects(fd, indent + 2, objects[key])
 
     def get_tree(self, path, make_dirs = False):
-        parts = string.split(path, os.sep)
-        dict  = self.objects
+        parts = split(path, os.sep)
+        d     = self.objects
         for part in parts:
-            if make_dirs and not dict.has_key(part):
-                dict[part] = {}
-            dict = dict[part]
-        return dict
+            if make_dirs and not d.has_key(part):
+                d[part] = {}
+            d = d[part]
+        return d
 
     def __getitem__(self, path):
         try:
-            dict = self.get_tree(path)
+            d = self.get_tree(path)
         except KeyError:
             raise KeyError(path)
 
-        if len(dict.keys()) == 1:
-            return dict['__book__'].get_data()
+        if len(d.keys()) == 1:
+            return d['__book__'].get_data()
         raise KeyError(path)
 
     def __setitem__(self, path, data):
         try:
-            dict = self.get_tree(path, make_dirs = True)
+            d = self.get_tree(path, make_dirs = True)
         except KeyError:
             raise KeyError(path)
-        if len(dict.keys()) == 0:
-            dict['__book__'] = self.book_type(self, path)
-        dict['__book__'].set_data(data)
+        if len(d.keys()) == 0:
+            d['__book__'] = self.book_type(self, path)
+        d['__book__'].set_data(data)
         self.dirty = True
 
     def prune_tree(self, objects, paths):
@@ -369,13 +376,13 @@ class gitshelve(dict):
 
     def __delitem__(self, path):
         try:
-            self.prune_tree(self.objects, string.split(path, os.sep))
+            self.prune_tree(self.objects, split(path, os.sep))
         except KeyError:
             raise KeyError(path)
 
     def __contains__(self, path):
-        dict = self.get_tree(path)
-        return len(dict.keys()) == 1 and dict.has_key('__book__')
+        d = self.get_tree(path)
+        return len(d.keys()) == 1 and d.has_key('__book__')
 
     def walker(self, kind, objects, path = ''):
         for item in objects.items():
@@ -383,7 +390,7 @@ class gitshelve(dict):
             assert isinstance(item[1], dict)
 
             if path:
-                key = string.join((path, item[0]), os.sep)
+                key = join((path, item[0]), os.sep)
             else:
                 key = item[0]
 
@@ -397,8 +404,8 @@ class gitshelve(dict):
                     assert kind == 'items'
                     yield (key, value)
             else:
-                for object in self.walker(kind, item[1], key):
-                    yield object
+                for obj in self.walker(kind, item[1], key):
+                    yield obj
 
         raise StopIteration
 
@@ -426,8 +433,8 @@ class gitshelve(dict):
         del odict['dirty']           # remove dirty flag
         return odict
 
-    def __setstate__(self,dict):
-        self.__dict__.update(dict)   # update attributes
+    def __setstate__(self, ndict):
+        self.__dict__.update(ndict) # update attributes
         self.dirty = False
 
         # If the HEAD reference is out of date, throw away all data and

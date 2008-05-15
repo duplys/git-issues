@@ -695,7 +695,7 @@ class XmlBuilder:
 
 ######################################################################
 
-class GitIssue(gitshelve.gitbook):
+class GitIssue(Issue, gitshelve.gitbook):
     def serialize_data(self):
         return object_to_string(self.data)
 
