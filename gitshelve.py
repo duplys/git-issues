@@ -8,7 +8,8 @@
 # This file implements a Python shelve object that uses a branch within the
 # current Git repository to store its data, plus a history of all changes to
 # that data.  The usage is identical to shelve, with the exception that a
-# branchname must be specified, and that writeback=True is assumed.
+# repository directory or branch name must be specified, and that
+# writeback=True is assumed.
 #
 # Example:
 #
