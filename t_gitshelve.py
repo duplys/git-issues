@@ -2,6 +2,8 @@
 
 import sys
 import re
+import os
+import shutil
 import unittest
 import gitshelve
 import exceptions
@@ -171,6 +173,33 @@ commit [0-9a-f]{40}
 Author: .+
 Date:   .+
 """, log))
+
+    def testDetachedRepo(self):
+        shelf = gitshelve.open(repository = '/tmp/repo-test')
+        text = "Hello, world!\n"
+        shelf['foo.txt'] = text
+
+        try:
+            shelf.sync()
+
+            gitshelve.git('clone', '/tmp/repo-test', '/tmp/repo-test-clone')
+
+            try:
+                self.assert_(os.path.isfile('/tmp/repo-test-clone/foo.txt'))
+
+                data = open('/tmp/repo-test-clone/foo.txt')
+                try:
+                    self.assertEqual(text, data.read())
+                finally:
+                    data.close()
+            finally:
+                if os.path.isdir('/tmp/repo-test-clone'):
+                    shutil.rmtree('/tmp/repo-test-clone')
+        finally:
+            del shelf
+            if os.path.isdir('/tmp/repo-test'):
+                shutil.rmtree('/tmp/repo-test')
+
 
 def suite():
     return unittest.TestLoader().loadTestsFromTestCase(t_gitshelve)

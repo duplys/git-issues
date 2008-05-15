@@ -14,7 +14,8 @@
 #
 #   import gitshelve
 #
-#   data = gitshelve.open(branch = 'mydata')
+#   data = gitshelve.open(branch = 'mydata', repository = '/tmp/foo')
+#   data = gitshelve.open(branch = 'mydata')  # use current repo
 #
 #   data['foo/bar/git.c'] = "This is some sample data."
 #
@@ -29,7 +30,7 @@
 # directory 'foo/bar'.  Running 'git log' will show the change you made.
 
 import re
-import os.path
+import os
 
 try:
     from cStringIO import StringIO
@@ -83,8 +84,22 @@ def git(cmd, *args, **kwargs):
                 print kwargs['input'],
                 print "EOF"
 
-        proc = Popen(('git-' + cmd,) + args, stdin = stdin_mode,
-                     stdout = PIPE, stderr = PIPE)
+        environ = None
+        if kwargs.has_key('repository'):
+            environ = os.environ.copy()
+            environ['GIT_DIR'] = kwargs['repository']
+
+            git_dir = environ['GIT_DIR']
+            if not os.path.isdir(git_dir):
+                proc = Popen('git-init', env = environ,
+                             stdout = PIPE, stderr = PIPE)
+                if proc.wait() != 0:
+                    raise GitError('init', [], {}, proc.stderr.read())
+
+        proc = Popen(('git-' + cmd,) + args, env = environ,
+                     stdin  = stdin_mode,
+                     stdout = PIPE,
+                     stderr = PIPE)
 
         if kwargs.has_key('input'):
             proc.stdin.write(kwargs['input'])
@@ -157,29 +172,37 @@ class gitshelve(dict):
     other Git users, nor does it support merging)."""
     ls_tree_pat = re.compile('(040000 tree|100644 blob) ([0-9a-f]{40})\t(start|(.+))$')
 
-    head      = None
-    dirty     = False
-    objects   = {}
+    head    = None
+    dirty   = False
+    objects = None
 
-    def __init__(self, branch, book_type = gitbook):
-        self.branch    = branch
-        self.book_type = book_type
+    def __init__(self, branch = 'master', repository = None,
+                 book_type = gitbook):
+        self.branch     = branch
+        self.repository = repository
+        self.book_type  = book_type
         self.init_data()
         dict.__init__(self)
 
     def init_data(self):
-        self.head      = None
-        self.dirty     = False
-        self.objects   = {}
+        self.head    = None
+        self.dirty   = False
+        self.objects = {}
+
+    def git(self, *args, **kwargs):
+        if self.repository:
+            kwargs['repository'] = self.repository
+        return apply(git, args, kwargs)
 
     def current_head(self):
-        return git('rev-parse', self.branch)
+        return self.git('rev-parse', self.branch)
 
     def update_head(self, new_head):
         if self.head:
-            git('update-ref', 'refs/heads/%s' % self.branch, new_head, self.head)
+            self.git('update-ref', 'refs/heads/%s' % self.branch, new_head,
+                     self.head)
         else:
-            git('update-ref', 'refs/heads/%s' % self.branch, new_head)
+            self.git('update-ref', 'refs/heads/%s' % self.branch, new_head)
         self.head = new_head
 
     def read_repository(self):
@@ -192,8 +215,8 @@ class gitshelve(dict):
         if not self.head:
             return
 
-        ls_tree = split(git('ls-tree', '-r', '-t', '-z', self.head),
-                               '\0')
+        ls_tree = split(self.git('ls-tree', '-r', '-t', '-z', self.head),
+                        '\0')
         for line in ls_tree:
             match = self.ls_tree_pat.match(line)
             assert match
@@ -214,21 +237,22 @@ class gitshelve(dict):
             else:
                 d['__book__'] = self.book_type(self, path, name)
 
-    def open(cls, branch, book_type = gitbook):
-        shelf = gitshelve(branch, book_type)
+    def open(cls, branch = 'master', repository = None,
+             book_type = gitbook):
+        shelf = gitshelve(branch, repository, book_type)
         shelf.read_repository()
         return shelf
 
     open = classmethod(open)
 
     def get_blob(self, name):
-        return git('cat-file', 'blob', name, keep_newline = True)
+        return self.git('cat-file', 'blob', name, keep_newline = True)
 
     def hash_blob(self, data):
-        return git('hash-object', '--stdin', input = data)
+        return self.git('hash-object', '--stdin', input = data)
 
     def make_blob(self, data):
-        return git('hash-object', '-w', '--stdin', input = data)
+        return self.git('hash-object', '-w', '--stdin', input = data)
 
     def make_tree(self, objects, comment_accumulator = None):
         buf = StringIO()
@@ -269,7 +293,7 @@ class gitshelve(dict):
                 buf.write("040000 tree %s\t%s\0" % (tree_name, path))
 
         if root is None:
-            name = git('mktree', '-z', input = buf.getvalue())
+            name = self.git('mktree', '-z', input = buf.getvalue())
             objects['__root__'] = name
             return name
         else:
@@ -278,10 +302,10 @@ class gitshelve(dict):
     def make_commit(self, tree_name, comment):
         if not comment: comment = ""
         if self.head:
-            name = git('commit-tree', tree_name, '-p', self.head,
+            name = self.git('commit-tree', tree_name, '-p', self.head,
                        input = comment)
         else:
-            name = git('commit-tree', tree_name, input = comment)
+            name = self.git('commit-tree', tree_name, input = comment)
 
         self.update_head(name)
         return name
@@ -446,7 +470,7 @@ class gitshelve(dict):
             self.read_repository()
 
 
-def open(branch, book_type = gitbook):
-    return gitshelve.open(branch, book_type)
+def open(branch = 'master', repository = None, book_type = gitbook):
+    return gitshelve.open(branch, repository, book_type)
 
 # gitshelve.py ends here
