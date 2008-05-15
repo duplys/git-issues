@@ -143,8 +143,8 @@ class gitbook:
             self.data  = data
             self.dirty = True
 
-    def serialize_data(self):
-        return self.data
+    def serialize_data(self, data):
+        return data
 
     def deserialize_data(self, data):
         return data
@@ -275,7 +275,7 @@ class gitshelve(dict):
                         if comment:
                             comment_accumulator.write(comment)
 
-                    book.name  = self.make_blob(book.serialize_data())
+                    book.name  = self.make_blob(book.serialize_data(book.data))
                     book.dirty = False
                     root = None
 

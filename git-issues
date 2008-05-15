@@ -709,11 +709,11 @@ class GitIssue(Issue):
         return self.name
 
 class xml_gitbook(gitshelve.gitbook):
-    def serialize_data(self):
-        return object_to_string(self.data)
+    def serialize_data(self, data):
+        return object_to_string(data)
 
     def deserialize_data(self, data):
-        self.data = object_from_string(data)
+        return object_from_string(data)
 
 class GitIssueSet(IssueSet):
     """This object implements all the command necessary to interact with Git
