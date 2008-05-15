@@ -773,6 +773,186 @@ def git(cmd, *args, **kwargs):
     if not kwargs.has_key('ignore_output'):
         return proc.stdout.read()[:-1]
 
+class gitbook:
+    """Abstracts a reference to a data file within a Git repository.  It also
+    maintains knowledge of whether the object has been modified or not."""
+    def __init__(self, shelf, path, hash = None):
+        self.shelf = shelf
+        self.path  = path
+        self.hash  = hash
+        self.data  = None
+        self.dirty = False
+
+    def data(self):
+        if self.data is None:
+            assert self.hash is not None
+            self.data = git('cat-file', 'blob', self.hash)
+        return self.data
+        
+    def set_data(self, data):
+        self.hash = None
+        self.data = data
+        self.mark_dirty()
+        
+    def mark_dirty(self):
+        self.dirty = True
+
+    def __getstate__(self):
+        odict = self.__dict__.copy() # copy the dict since we change it
+        del odict['dirty']           # remove dirty flag
+        return odict
+
+    def __setstate__(self,dict):
+        self.__dict__.update(dict)   # update attributes
+        self.dirty = False
+
+
+class gitshelve(dict):
+    """This class implements a Python "shelf" using a branch within a Git
+    repository.  There is no "writeback" argument, meaning changes are only
+    written upon calling close or sync.
+
+    This implementation uses a dictionary of gitbook objects, since we don't
+    really want to use Pickling within a Git repository (it's not friendly to
+    other Git users, nor does it support merging)."""
+    ls_tree_pat = re.compile('(040000 tree|100644 blob) ([0-9a-f]{40})\t(start|(.+))$')
+
+    def __init__(self, branch):
+        self.dirty      = False
+        self.branch     = branch
+        self.trees      = {}
+        self.paths      = {}
+
+    def create_branch(self, cmd, args, kwargs):
+        """If an issues branch already exists at the remote, we simply refer
+        to it from now on.  Otherwise, we create a dummy commit in order get
+        things started."""
+        try:
+            hash = git('rev-parse', 'origin/%s' % self.branch,
+                       no_stderr = True)
+        except:
+            msg  = "Created %s branch\n" % self.branch
+            hash = git('hash-object', '-w', '--stdin', input = msg)
+            hash = git('mktree', input = "100644 blob %s\tstart\n" % hash)
+            hash = git('commit-tree', hash, input = msg)
+
+        git('branch', self.branch, hash)
+        return True
+
+    def current_head(self):
+        return git('rev-parse', self.branch, restart = self.create_branch)
+
+    def open(cls, branch):
+        shelf = gitshelve(branch)
+        
+        ls_tree = string.split(git('ls-tree', '-r', '-t', '-z',
+                                   self.current_head()), '\0')
+        for line in ls_tree:
+            match = cls.ls_tree_pat.match(line)
+            assert match
+
+            hash = match.group(2)
+            path = match.group(3)
+
+            if match.group(1) == "040000 tree":
+                parts = os.path.split(path)
+
+                dict = shelf.trees
+
+                for part in parts:
+                    if not dict.has_key(part):
+                        dict[part] = {}
+                    dict = dict[part]
+
+                dict['__root__'] = hash
+
+            elif path == 'start':
+                break
+
+            else:
+                assert not shelf.paths.has_key(path)
+                shelf.paths[path] = gitbook(shelf, path, hash)
+
+        return shelf
+
+    open = classmethod(open)
+
+    def sync(self):
+        if self.dirty:
+            for book in self.paths:
+                if book.dirty:
+                    self.sync_book(book)
+        self.dirty = False
+
+    def sync_book(self, book):
+        # Create a unique blob to represent the new issue.  This is the
+        # issue's official object name from now on, and will never change.
+        blob = git('hash-object', '-w', '--stdin', input = repr(book))
+        book.hash  = blob
+        book.dirty = False
+
+        tree = git('mktree', input = "100644 blob %s\tinfo\n" % blob)
+
+        # Merge this blob with existing issue blobs that share the same
+        # first two hash digits
+        if self.trees.has_key(blob[:2]):
+            parent = self.trees[blob[:2]]
+        else:
+            parent = [None]
+            self.trees[blob[:2]] = parent
+        parent.append((tree, blob[2:]))
+
+        buffer = StringIO()
+        for child in parent[1:]:
+            buffer.write("040000 tree %s\t%s\n" % (child[0], child[1]))
+
+        tree = git('mktree', input = buffer.getvalue())
+
+        self.trees[blob[:2]][0] = tree
+
+        # Merge it into the tree of issues overall
+        keys = self.trees.keys()
+        keys.sort()
+
+        buffer = StringIO()
+        for key in keys:
+            buffer.write("040000 tree %s\t%s\n" % (self.trees[key][0], key))
+
+        tree = git('mktree', input = buffer.getvalue())
+
+        # Commit the merged tree (though at this moment it's a dangling commit)
+        commit = git('commit-tree', tree, '-p', self.current_head(),
+                     input = book.title)
+
+        # Update the head of the issues branch to point to the new commit
+        self.update_head(commit)
+
+    def close(self):
+        if self.dirty:
+            self.sync()
+        del self.objects        # free it up right away
+
+    def __getitem__(self, path):
+        return self.paths[path].data()
+
+    def __setitem__(self, path, data):
+        if not self.paths.has_key(path):
+            self.paths[path] = gitbook(self, path)
+        self.paths[path].set_data(data)
+        self.dirty = True
+
+    def __detitem__(self, path):
+        del self.paths[path]
+
+    def __contains__(self, path):
+        return self.paths.has_key()
+
+    def __iter__(self):
+        pass
+
+    def iteritems(self):
+        pass
+
 class GitIssueSet(IssueSet):
     """This object implements all the command necessary to interact with Git
     for the purpose of storing and distributing issues."""
@@ -941,129 +1121,131 @@ def get_issue(issueSet, id):
 
 ######################################################################
 
-if len(args) == 0:
-    print "Show help here."
-    sys.exit(1)
+if __name__ == '__main__':
 
-command = args[0]
-args    = args[1:]
-
-######################################################################
-
-# jww (2008-05-12): Pick the appropriate IssueSet to used based on what we
-# find in our environment.
-
-issueSet = IssueSet.load_state(GitIssueSet())
-
-######################################################################
-
-if command == "list":
-    print
-    print "   #    Id     Title                   State  Date  Assign  Tags"
-    print "-------------------------------------------------------------------------------"
-
-    index = 1
-    for name in issueSet.issues.keys():
-        issue = issueSet.issues[name]
-
-        print "%4d  %s  %-23s %-6s %5s %6s %s" % \
-            (index, issue.name[:7], issue.title, issue.status,
-             issue.created and issue.created.strftime('%m/%d'),
-             str(issue.author)[:6], '')
-
-        index += 1
-
-    print
-
-######################################################################
-
-elif command == "show" or command == "dump":
     if len(args) == 0:
-        print "Shows needs an index or Id."
+        print "Show help here."
+        sys.exit(1)
 
-    issue = get_issue(issueSet, args[0])
-    if command == "show":
-        sys.stdout.write("""
-      Title: %s
-    Summary: %s
-
-Description: %s
-
-     Author: %s
-   Reporter: %s
-      Owner: %s
-   Assigned: %s
-         Cc: %s
-
-       Type: %s
-     Status: %s
- Resolution: %s
- Components: %s
-    Version: %s
-  Milestone: %s
-   Severity: %s
-   Priority: %s
-       Tags: %s
-   
-    Created: %s
-   Modified: %s
-
-""" % (issue.title,
-       issue.format_long_text(issue.summary),
-
-       issue.format_long_text(issue.description),
-
-       issue.author,
-       issue.format_people_list(issue.reporters),
-       issue.format_people_list(issue.owners),
-       issue.format_people_list(issue.assigned),
-       issue.format_people_list(issue.carbons),
-
-       issue.issue_type,
-       issue.status,
-       issue.resolution or "",
-       issue.components or "",
-       issue.version or "",
-       issue.milestone or "",
-       issue.severity,
-       issue.priority,
-       issue.tags or "",
-
-       issue.created,
-       issue.modified))
-    else:
-        write_object(issue)
+    command = args[0]
+    args    = args[1:]
 
 ######################################################################
 
-elif command == "change":
-    if len(args) == 0:
-        print "Change needs an issue."
+    # jww (2008-05-12): Pick the appropriate IssueSet to used based on what we
+    # find in our environment.
 
-    issue = get_issue(issueSet, args[0])
-
-    # jww (2008-05-13): Need to parse datetime, lists, and people
-    eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
+    issueSet = IssueSet.load_state(GitIssueSet())
 
 ######################################################################
 
-elif command == "new":
-    if len(args) == 0:
-        print "New needs a title."
+    if command == "list":
+        print
+        print "   #    Id     Title                   State  Date  Assign  Tags"
+        print "-------------------------------------------------------------------------------"
 
-    issue = Issue(issueSet, issueSet.current_author(), args[0])
-    issueSet.add_issue(issue)
-    issue.mark_dirty(True)
+        index = 1
+        for name in issueSet.issues.keys():
+            issue = issueSet.issues[name]
+
+            print "%4d  %s  %-23s %-6s %5s %6s %s" % \
+                (index, issue.name[:7], issue.title, issue.status,
+                 issue.created and issue.created.strftime('%m/%d'),
+                 str(issue.author)[:6], '')
+
+            index += 1
+
+        print
 
 ######################################################################
 
-# If any of the commands made the issueSet dirty, (possibly) update the
-# repository and write out a new cache
+    elif command == "show" or command == "dump":
+        if len(args) == 0:
+            print "Shows needs an index or Id."
 
-issueSet.save_state()
+        issue = get_issue(issueSet, args[0])
+        if command == "show":
+            sys.stdout.write("""
+          Title: %s
+        Summary: %s
+
+    Description: %s
+
+         Author: %s
+       Reporter: %s
+          Owner: %s
+       Assigned: %s
+             Cc: %s
+
+           Type: %s
+         Status: %s
+     Resolution: %s
+     Components: %s
+        Version: %s
+      Milestone: %s
+       Severity: %s
+       Priority: %s
+           Tags: %s
+
+        Created: %s
+       Modified: %s
+
+    """ % (issue.title,
+           issue.format_long_text(issue.summary),
+
+           issue.format_long_text(issue.description),
+
+           issue.author,
+           issue.format_people_list(issue.reporters),
+           issue.format_people_list(issue.owners),
+           issue.format_people_list(issue.assigned),
+           issue.format_people_list(issue.carbons),
+
+           issue.issue_type,
+           issue.status,
+           issue.resolution or "",
+           issue.components or "",
+           issue.version or "",
+           issue.milestone or "",
+           issue.severity,
+           issue.priority,
+           issue.tags or "",
+
+           issue.created,
+           issue.modified))
+        else:
+            write_object(issue)
 
 ######################################################################
 
-sys.exit(0)
+    elif command == "change":
+        if len(args) == 0:
+            print "Change needs an issue."
+
+        issue = get_issue(issueSet, args[0])
+
+        # jww (2008-05-13): Need to parse datetime, lists, and people
+        eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
+
+######################################################################
+
+    elif command == "new":
+        if len(args) == 0:
+            print "New needs a title."
+
+        issue = Issue(issueSet, issueSet.current_author(), args[0])
+        issueSet.add_issue(issue)
+        issue.mark_dirty(True)
+
+######################################################################
+
+    # If any of the commands made the issueSet dirty, (possibly) update the
+    # repository and write out a new cache
+
+    issueSet.save_state()
+
+######################################################################
+
+    sys.exit(0)
 
 # git-issue ends here
