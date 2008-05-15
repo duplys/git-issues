@@ -98,7 +98,10 @@ def git(cmd, *args, **kwargs):
                 raise GitError(cmd, args, kwargs, proc.stderr.read())
 
     if not kwargs.has_key('ignore_output'):
-        return proc.stdout.read()[:-1]
+        if kwargs.has_key('keep_newline'):
+            return proc.stdout.read()
+        else:
+            return proc.stdout.read()[:-1]
 
 
 class gitbook:
@@ -173,8 +176,8 @@ class gitshelve(dict):
         if not self.head:
             return
 
-        ls_tree = string.split(git('ls-tree', '-r', '-t', '-z',
-                                   self.head), '\0')
+        ls_tree = string.split(git('ls-tree', '-r', '-t', '-z', self.head),
+                               '\0')
         for line in ls_tree:
             match = self.ls_tree_pat.match(line)
             assert match
@@ -193,7 +196,7 @@ class gitshelve(dict):
             if treep:
                 dict['__root__'] = hash
             else:
-                dict['__book__'] = book_type(shelf, path, hash)
+                dict['__book__'] = self.book_type(self, path, hash)
 
     def open(cls, branch, book_type = gitbook):
         shelf = gitshelve(branch, book_type)
@@ -203,7 +206,7 @@ class gitshelve(dict):
     open = classmethod(open)
 
     def get_blob(self, hash):
-        return git('cat-file', 'blob', hash)
+        return git('cat-file', 'blob', hash, keep_newline = True)
 
     def make_blob(self, data):
         return git('hash-object', '-w', '--stdin', input = data)
