@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# gitshelve.py, version 1.0
+# gitshelve.py, version 0.1
 #
 # by John Wiegley <johnw@newartisans.com>
 #

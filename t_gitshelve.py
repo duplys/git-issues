@@ -118,6 +118,59 @@ path: (apple/orange/baz3.c)
 path: (foo/bar/baz1.c)
 """, buffer.getvalue())
 
+    def testVersioning(self):
+        shelf = gitshelve.open('test')
+        text = "Hello, this is a test\n"
+        shelf['foo/bar/baz1.c'] = text
+        shelf.sync()
+
+        buffer = StringIO()
+        shelf.dump_objects(buffer)
+        self.assertEqual("""tree 073629aeb0ef56a50a6cfcaf56da9b8393604b56
+  tree ce9d91f2da4ab3aa920cd5763be48b9aef76f999: foo
+    tree 2e626f2ae629ea77618e84e79e1bfae1c473452e: bar
+      blob ea93d5cc5f34e13d2a55a5866b75e2c58993d253: baz1.c
+""", buffer.getvalue())
+
+        text = "Hello, this is a change\n"
+        shelf['foo/bar/baz1.c'] = text
+        shelf['foo/bar/baz2.c'] = text
+        shelf.sync()
+
+        buffer = StringIO()
+        shelf.dump_objects(buffer)
+        self.assertEqual("""tree c7c6fd4368460c645d0953349d5577d32f46115a
+  tree 3936ea8daffe9eef0451b43205d6530374f8ffa3: foo
+    tree 8f7bfca3bc33c93fb1a878bc79c2bb93d8f41730: bar
+      blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz1.c
+      blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz2.c
+""", buffer.getvalue())
+
+        del shelf
+
+        shelf = gitshelve.open('test')
+
+        buffer = StringIO()
+        shelf.dump_objects(buffer)
+        self.assertEqual("""tree 3936ea8daffe9eef0451b43205d6530374f8ffa3: foo
+  tree 8f7bfca3bc33c93fb1a878bc79c2bb93d8f41730: bar
+    blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz1.c
+    blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz2.c
+""", buffer.getvalue())
+
+        self.assertEqual(text, shelf['foo/bar/baz1.c'])
+        self.assertEqual(text, shelf['foo/bar/baz2.c'])
+
+        log = gitshelve.git('log', 'test', keep_newline = True)
+
+        self.assert_(re.match("""commit [0-9a-f]{40}
+Author: .+
+Date:   .+
+
+commit [0-9a-f]{40}
+Author: .+
+Date:   .+
+""", log))
 
 def suite():
     return unittest.TestLoader().loadTestsFromTestCase(t_gitshelve)
