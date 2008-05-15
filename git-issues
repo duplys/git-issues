@@ -34,7 +34,7 @@ from os.path    import isdir, isfile, join
 
 iso_fmt       = "%Y%m%dT%H%M%S"
 options       = None
-cache_version = 9
+cache_version = 10
 
 ######################################################################
 
@@ -330,8 +330,6 @@ class IssueSet:
             return object_from_string(self.shelf['project.xml'])
         except:
             return self
-
-    load_state = classmethod(load_state)
 
     def save_state(self):
         """Write an IssueSet to disk in object form, for fast loading on the next
@@ -710,12 +708,11 @@ class GitIssueSet(IssueSet):
     def __init__(self):
         self.GIT_DIR    = None
         self.GIT_AUTHOR = None
-        IssueSet.__init__(self, gitshelve.open('issues',
-                                               book_type = GitIssue))
+        IssueSet.__init__(self, gitshelve.open('issues', book_type = GitIssue))
 
     def git_directory(self):
         if self.GIT_DIR is None:
-            self.GIT_DIR = git('rev-parse', '--git-dir')
+            self.GIT_DIR = gitshelve.git('rev-parse', '--git-dir')
         return self.GIT_DIR
 
     def issues_cache_file(self):
@@ -723,8 +720,8 @@ class GitIssueSet(IssueSet):
 
     def current_author(self):
         if self.GIT_AUTHOR is None:
-            self.GIT_AUTHOR = Person(git('config', 'user.name'),
-                                     git('config', 'user.email'))
+            self.GIT_AUTHOR = Person(gitshelve.git('config', 'user.name'),
+                                     gitshelve.git('config', 'user.email'))
         return self.GIT_AUTHOR
 
     def allocate_issue(self, title):
