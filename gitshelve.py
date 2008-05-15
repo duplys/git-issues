@@ -62,10 +62,10 @@ class GitError(Exception):
         self.stderr = stderr
 
     def __str__(self):
-        if stderr:
-             return "Git command failed: git-%s %s: %s" % (cmd, args, stderr)
+        if self.stderr:
+             return "Git command failed: git-%s %s: %s" % (self.cmd, self.args, self.stderr)
         else:
-             return "Git command failed: git-%s %s" % (cmd, args)
+             return "Git command failed: git-%s %s" % (self.cmd, self.args)
 
 def git(cmd, *args, **kwargs):
     restart = True
