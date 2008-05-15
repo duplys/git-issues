@@ -26,40 +26,30 @@ keeping by the `git-issues` script.
 If you were to checkout this branch, you'd find a set of top-level
 directories, each giving the first two characters of a Git object name (hash
 id).  This mirrors the way that loose objects are organized within
-`.git/objects`.  In each of these directories will be another set of
-directories, this time spelling out the remaining 38 characters of each
-issue's unique object name.  No matter what is done with an issue, this
-reference to it never changes.
+`.git/objects`.  In each of these directories is another set of directories,
+this time spelling out the remaining 38 characters of each issue's unique
+object name.  No matter what is done with an issue, this reference to it never
+changes.
 
 In each each uniquely named issue directory may be found one or more files of
 the following form:
 
-## `info`
+## `issue.xml`
 
-The info file is unchanging after an issue is created, and it's the
-contents of this file which identify the object name of the issue.  It
-contains three lines:
+The data file changes throughout the history of an issue, even though the
+object name for the issue (it's 40-byte hash) is always used from the time of
+creation onward.  Issues are mutable, after all.
 
-1. A numerical timestamp indicating when the issue was created.
+The file is in a very straightforward form of XML, where each data string
+occupies its own line to facilitate merging.  Note that for any XML haters out
+there, you'll never have to look at this data.  I just picked XML because it's
+(a) relatively future-proof, and (b) very merge-friendly.
 
-2. The name and e-mail address of the person who created the issue with
-   git-issues.  This is not necessarily the original submitter of the
-   issue, nor is it necessarily the person the issue is assigned to.  In
-   fact, this person may have no meaningful connection with the issue at
-   all, they are simply the original author of its title.
+The data contained maps directly on to what you see from the `git issues show`
+command.  Use `git issues dump` to view the XML directly, or for importing
+into a higher-level script.
 
-3. The issue's original title.
-
-At any point in the future there may be a new title or author assigned
-to an issue, but these three original details are kept as the
-"signature" of the issue itself and are left unchanged.
-
-## `state`
-
-This file contains a series of keys and values (in the form of "Key:
-Value"), which indicate the current state of the issue.  Any of these
-are editable, and it is these details which get displayed to the user
-through the various `git-issues` commands:
+Here's some of the data this file tracks:
 
  * Title
  * Summary
@@ -79,53 +69,44 @@ through the various `git-issues` commands:
  * Priority: high, med, low
  * Tags
 
-## `[HASH].comment`
+## `comment_[ISO_TIMESTAMP]_[HASH].xml`
 
-A comment is a note attached to an issue.  It cannot be changed,
-although it can be deleted and superceded by a revised version.  It has
-the following layout:
+A comment is a note attached to an issue.  This XML file records:
 
-1. The first line is a timestamp indicating when the comment was made.
+ * When the comment was created
+ * When the comment was last edited
+ * The author of the comment
+ * The text of the comment itself
+ * Any attachments associated with the comment.
 
-2. The second line is the name and e-mail of the author of the comment,
-   just like the `info` file above.
+## filename
 
-3. The third line is a comma-separated list of attachments hashes
-   associated with this comment, or a blank line if none.
+An attachment is a text or binary file which has been linked to an issue.
+It's name is the same as the filename it's created under.  There must always
+be one or more comments that refer to the attachment, otherwise the system is
+free to delete it.
 
-4. The fourth and remaining lines of the file make up the body of the
-   comment.  If the comment has no body at all (if this is just an
-   attached, then there is no fourth line).
-
-## `[HASH].attach`
-
-An attachment is a text or binary file which has been linked to an
-issue.  It's name is the same as the blob that records its contents.
-There must always be one or more comments that refer to the attachment,
-otherwise the system is free to delete it.
-
-## Top-level `project` file
+## Top-level `project.xml` file
 
 Also, at the top-level of the `issues` branch is a file which contains
-information relating to the whole project.  The file is named `project` and
-contains the following key values pairs in the form of "Key: Value".  Most
-keys can repeat in order to specify multiple values:
+information relating to the whole project.  The file is named `project.xml`
+and contains the following information.
 
- * Status: KEYWORD
- * Resolution: KEYWORD
- * Type: KEYWORD
- * Component: TITLE = NAME <E-MAIL>
- * Version: TAG
- * Milestone: NAME
- * Severity: KEYWORD
- * Priority: KEYWORD
+ * Statuses
+ * Resolutions
+ * Types
+ * Components
+ * Versions
+ * Milestones
+ * Severities
+ * Priorities
 
-Each of these key/value pairs identifies a legal value for the given field.
-Only the "Tags" field is freely assignable to any value; all other fields must
-match one of the settings in the `project` file.
+Each of these identifies a legal set of values for the given field.  Only the
+"Tags" field is freely assignable to any value; all other fields must match
+one of the settings in the `project` file.
 
-The Component field can have a default "Owner".  This is the person who gets
-notified of your issue when they pull the new issue down from the public
-repository.
+The Component field can also specify default "Owners" for each component.
+This is the person (or people) who get notified automatically about changes in
+the issue whenever they pull the new issue down from the public repository.
 
 Lastly, the Version field must match an existing tag name.
