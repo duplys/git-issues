@@ -272,17 +272,21 @@ class IssueSet:
 
     def __getitem__(self, idx_or_partial_hash):
         issue = None
-        #try:
-        #    idx = int(id) - 1
-        #    issue = issueSet.issues[issueSet.issues.keys()[idx]]
-        #except:
-        #    for name in issueSet.issues.keys():
-        #        if re.match(id, name):
-        #            issue = issueSet.issues[name]
-        #            break
+        try:
+            idx = int(idx_or_partial_hash) - 1
+            issue = self.shelf[self.shelf.keys()[idx]]
+        except:
+	     clean = lambda x: x.replace('issue.xml', '').replace('/','')
+	     matching = [(clean(key),key) for key in self.shelf.iterkeys() if clean(key).startswith(idx_or_partial_hash)]
+	     if len(matching) == 0:
+		     pass
+	     elif len(matching) == 1:
+		     issue = self.shelf[matching[0][1]]
+	     else:
+		     print "Ambiguous hash matches:\n" + '\t\n'.join(a[0] for a in matching)
 
         if not issue:
-            raise Exception("There is no issue matching the identifier '%s'.\n" % id)
+            raise Exception("There is no issue matching the identifier '%s'.\n" % idx_or_partial_hash)
 
         return issue
 
@@ -887,20 +891,20 @@ if __name__ == '__main__':
 
     elif command == "change":
         if len(args) == 0:
-            print "Change needs an issue."
+	    print "Usage: %s change issue_id field value" % sys.argv[0]
+	else:
+	    issue = issueSet[args[0]]
 
-        issue = issueSet[args[0]]
-
-        # jww (2008-05-13): Need to parse datetime, lists, and people
-        eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
+	    # jww (2008-05-13): Need to parse datetime, lists, and people
+	    eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
 
 ######################################################################
 
     elif command == "new":
         if len(args) == 0:
-            print "New needs a title."
-
-        issue = issueSet.new_issue(args[0])
+            print "Usage: %s title" % sys.argv[0]
+	else:
+            issue = issueSet.new_issue(args[0])
 
 ######################################################################
 
