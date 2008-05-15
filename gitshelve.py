@@ -117,7 +117,7 @@ class gitbook:
     def get_data(self):
         if self.data is None:
             assert self.hash is not None
-            self.data = self.shelf.get_blob(self.hash)
+            self.data = self.deserialize_data(self.shelf.get_blob(self.hash))
         return self.data
         
     def set_data(self, data):
@@ -125,6 +125,15 @@ class gitbook:
             self.hash  = None
             self.data  = data
             self.dirty = True
+
+    def serialize_data(self):
+        return self.data
+
+    def deserialize_data(self, data):
+        return data
+
+    def change_comment(self):
+        return None
 
     def __getstate__(self):
         odict = self.__dict__.copy() # copy the dict since we change it
@@ -211,7 +220,7 @@ class gitshelve(dict):
     def make_blob(self, data):
         return git('hash-object', '-w', '--stdin', input = data)
 
-    def make_tree(self, objects):
+    def make_tree(self, objects, comment_accumulator = None):
         buffer = StringIO()
 
         root = None
@@ -227,9 +236,15 @@ class gitshelve(dict):
             if len(object.keys()) == 1 and object.has_key('__book__'):
                 book = object['__book__']
                 if book.dirty:
-                    book.hash  = self.make_blob(book.data)
+                    if comment_accumulator:
+                        comment = book.change_comment()
+                        if comment:
+                            comment_accumulator.write(comment)
+
+                    book.hash  = self.make_blob(book.serialize_data())
                     book.dirty = False
                     root = None
+
                 buffer.write("100644 blob %s\t%s\0" % (book.hash, path))
 
             else:
@@ -237,7 +252,7 @@ class gitshelve(dict):
                 if object.has_key('__root__'):
                     tree_root = object['__root__']
 
-                tree_hash = self.make_tree(object)
+                tree_hash = self.make_tree(object, comment_accumulator)
                 if tree_hash != tree_root:
                     root = None
 
@@ -251,6 +266,7 @@ class gitshelve(dict):
             return root
 
     def make_commit(self, tree_hash, comment):
+        if not comment: comment = ""
         if self.head:
             hash = git('commit-tree', tree_hash, '-p', self.head,
                        input = comment)
@@ -259,6 +275,32 @@ class gitshelve(dict):
 
         self.update_head(hash)
         return hash
+
+    def commit(self, comment = None):
+        if not self.dirty:
+            return self.head
+
+        accumulator = None
+        if comment is None:
+            accumulator = StringIO()
+        
+        # Walk the objects now, creating and nesting trees until we end up
+        # with a top-level tree.  We then create a commit out of this tree.
+        tree = self.make_tree(self.objects, accumulator)
+        if accumulator:
+            comment = accumulator.getvalue()
+        hash = self.make_commit(tree, comment)
+
+        self.dirty = False
+        return hash
+
+    def sync(self):
+        self.commit()
+
+    def close(self):
+        if self.dirty:
+            self.sync()
+        del self.objects        # free it up right away
 
     def dump_objects(self, fd, indent = 0, objects = None):
         if objects is None:
@@ -290,25 +332,6 @@ class gitshelve(dict):
 
             if kind[:4] == 'tree':
                 self.dump_objects(fd, indent + 2, objects[key])
-
-    def commit(self, comment = ""):
-        if not self.dirty:
-            return self.head
-        
-        # Walk the objects now, creating and nesting trees until we end up
-        # with a top-level tree.  We then create a commit out of this tree.
-        hash = self.make_commit(self.make_tree(self.objects), comment)
-        self.dirty = False
-
-        return hash
-
-    def sync(self):
-        self.commit()
-
-    def close(self):
-        if self.dirty:
-            self.sync()
-        del self.objects        # free it up right away
 
     def get_tree(self, path, make_dirs = False):
         parts = string.split(path, os.sep)
@@ -354,11 +377,48 @@ class gitshelve(dict):
         dict = self.get_tree(path)
         return len(dict.keys()) == 1 and dict.has_key('__book__')
 
-    #def __iter__(self):
-    #    pass
-    #
-    #def iteritems(self):
-    #    pass
+    def walker(self, kind, objects, path = ''):
+        for item in objects.items():
+            if item[0] == '__root__': continue
+            assert isinstance(item[1], dict)
+
+            if path:
+                key = string.join((path, item[0]), os.sep)
+            else:
+                key = item[0]
+
+            if len(item[1].keys()) == 1 and item[1].has_key('__book__'):
+                value = item[1]['__book__']
+                if kind == 'keys':
+                    yield key
+                elif kind == 'values':
+                    yield value
+                else:
+                    assert kind == 'items'
+                    yield (key, value)
+            else:
+                for object in self.walker(kind, item[1], key):
+                    yield object
+
+        raise StopIteration
+
+    def __iter__(self):
+        return self.iterkeys()
+    
+    def iteritems(self):
+        return self.walker('items', self.objects)
+
+    def keys(self):
+        k = []
+        for key in self.iterkeys():
+            k.append(key)
+        return k
+
+    def iterkeys(self):
+        return self.walker('keys', self.objects)
+
+    def itervalues(self):
+        return self.walker('values', self.objects)
 
     def __getstate__(self):
         self.sync()                  # synchronize before persisting
@@ -374,6 +434,7 @@ class gitshelve(dict):
         # rebuild it.
         if not self.head or self.head != self.current_head():
             self.read_repository()
+
 
 def open(branch, book_type = gitbook):
     return gitshelve.open(branch, book_type)

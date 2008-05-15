@@ -101,6 +101,23 @@ class t_gitshelve(unittest.TestCase):
         self.assertEqual(text, shelf['foo/bar/baz.c'])
         del shelf
 
+    def testIterator(self):
+        shelf = gitshelve.open('test')
+        text = "Hello, this is a test\n"
+        shelf['foo/bar/baz1.c'] = text
+        shelf['alpha/beta/baz2.c'] = text
+        shelf['apple/orange/baz3.c'] = text
+
+        buffer = StringIO()
+        keys = shelf.keys()
+        keys.sort()
+        for path in keys:
+            buffer.write("path: (%s)\n" % path)
+        self.assertEqual("""path: (alpha/beta/baz2.c)
+path: (apple/orange/baz3.c)
+path: (foo/bar/baz1.c)
+""", buffer.getvalue())
+
 
 def suite():
     return unittest.TestLoader().loadTestsFromTestCase(t_gitshelve)
