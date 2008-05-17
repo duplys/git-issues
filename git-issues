@@ -14,7 +14,6 @@
 import sys
 import os
 import re
-import string
 import optparse
 
 import gitshelve
@@ -276,17 +275,20 @@ class IssueSet:
             idx = int(idx_or_partial_hash) - 1
             issue = self.shelf[self.shelf.keys()[idx]]
         except:
-	     clean = lambda x: x.replace('issue.xml', '').replace('/','')
-	     matching = [(clean(key),key) for key in self.shelf.iterkeys() if clean(key).startswith(idx_or_partial_hash)]
-	     if len(matching) == 0:
-		     pass
-	     elif len(matching) == 1:
-		     issue = self.shelf[matching[0][1]]
-	     else:
-		     print "Ambiguous hash matches:\n" + '\t\n'.join(a[0] for a in matching)
+            clean = lambda x: x.replace('issue.xml', '').replace('/','')
+            matching = [(clean(key), key) for key in self.shelf.iterkeys()
+                        if clean(key).startswith(idx_or_partial_hash)]
+            if len(matching) == 0:
+                pass
+            elif len(matching) == 1:
+                issue = self.shelf[matching[0][1]]
+            else:
+                print ("Ambiguous hash matches:\n" +
+                       '\t\n'.join(a[0] for a in matching))
 
         if not issue:
-            raise Exception("There is no issue matching the identifier '%s'.\n" % idx_or_partial_hash)
+            raise Exception("There is no issue matching the identifier '%s'.\n" %
+                            idx_or_partial_hash)
 
         return issue
 
@@ -751,7 +753,7 @@ def format_long_text(text, indent = 13):
     if not text:
         return "<none>"
 
-    lines = string.split(text, '\n')
+    lines = text.split('\n')
 
     buffer = StringIO()
     first = True
