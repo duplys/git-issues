@@ -33,7 +33,7 @@ from os.path    import isdir, isfile, join
 
 iso_fmt       = "%Y%m%dT%H%M%S"
 options       = None
-cache_version = 10
+cache_version = 11
 
 ######################################################################
 
