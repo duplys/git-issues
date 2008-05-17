@@ -178,10 +178,11 @@ class gitshelve(dict):
     objects = None
 
     def __init__(self, branch = 'master', repository = None,
-                 book_type = gitbook):
-        self.branch     = branch
-        self.repository = repository
-        self.book_type  = book_type
+                 keep_history = True, book_type = gitbook):
+        self.branch       = branch
+        self.repository   = repository
+        self.keep_history = keep_history
+        self.book_type    = book_type
         self.init_data()
         dict.__init__(self)
 
@@ -239,8 +240,8 @@ class gitshelve(dict):
                 d['__book__'] = self.book_type(self, path, name)
 
     def open(cls, branch = 'master', repository = None,
-             book_type = gitbook):
-        shelf = gitshelve(branch, repository, book_type)
+             keep_history = True, book_type = gitbook):
+        shelf = gitshelve(branch, repository, keep_history, book_type)
         shelf.read_repository()
         return shelf
 
@@ -302,9 +303,9 @@ class gitshelve(dict):
 
     def make_commit(self, tree_name, comment):
         if not comment: comment = ""
-        if self.head:
+        if self.head and self.keep_history:
             name = self.git('commit-tree', tree_name, '-p', self.head,
-                       input = comment)
+                            input = comment)
         else:
             name = self.git('commit-tree', tree_name, input = comment)
 
@@ -377,22 +378,47 @@ class gitshelve(dict):
             d = d[part]
         return d
 
+    def get(self, key):
+        path = '%s/%s' % (key[:2], key[2:])
+        d = None
+        try:
+            d = self.get_tree(path)
+        except KeyError:
+            raise KeyError(key)
+        if not d or not d.has_key('__book__'):
+            raise KeyError(key)
+        return d['__book__'].get_data()
+
+    def put(self, data):
+        book = self.book_type(self, '__unknown__')
+        book.data  = data
+        book.name  = self.make_blob(book.serialize_data(book.data))
+        book.dirty = False      # the blob was just written!
+        book.path  = '%s/%s' % (book.name[:2], book.name[2:])
+
+        d = self.get_tree(book.path, make_dirs = True)
+        d.clear()
+        d['__book__'] = book
+        self.dirty = True
+
+        return book.name
+
     def __getitem__(self, path):
+        d = None
         try:
             d = self.get_tree(path)
         except KeyError:
             raise KeyError(path)
 
-        if len(d.keys()) == 1:
+        if d and d.has_key('__book__'):
             return d['__book__'].get_data()
-        raise KeyError(path)
+        else:
+            raise KeyError(path)
 
     def __setitem__(self, path, data):
-        try:
-            d = self.get_tree(path, make_dirs = True)
-        except KeyError:
-            raise KeyError(path)
-        if len(d.keys()) == 0:
+        d = self.get_tree(path, make_dirs = True)
+        if not d.has_key('__book__'):
+            d.clear()
             d['__book__'] = self.book_type(self, path)
         d['__book__'].set_data(data)
         self.dirty = True
@@ -471,7 +497,8 @@ class gitshelve(dict):
             self.read_repository()
 
 
-def open(branch = 'master', repository = None, book_type = gitbook):
-    return gitshelve.open(branch, repository, book_type)
+def open(branch = 'master', repository = None, keep_history = True,
+         book_type = gitbook):
+    return gitshelve.open(branch, repository, keep_history, book_type)
 
 # gitshelve.py ends here
