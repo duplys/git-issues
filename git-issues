@@ -814,6 +814,29 @@ if __name__ == '__main__':
 
 ######################################################################
 
+    if command == "init":
+        from os.path import split, join, exists, dirname
+        from os import getcwd, makedirs
+        from shutil import copy
+        path = getcwd()
+        while not exists(join(path,".git")):
+            path,extra = split(path)
+            if not extra:
+                print "Unable to find a git repository. "
+                print "Make sure you ran `git init` at some point."
+                sys.exit(1)
+        issuesdir = join(path,".gitissues")
+        if exists(issuesdir):
+            print "git-issues helper directory %s already exists." % issuesdir
+            print "Doing nothing."
+            sys.exit(1)
+        makedirs(issuesdir)
+        copy(__file__, issuesdir)
+        copy(join(dirname(__file__), "gitshelve.py"), issuesdir)
+        copy(join(dirname(__file__), "t_gitshelve.py"), issuesdir)
+        copy(join(dirname(__file__), "README"), issuesdir)
+        copy(join(dirname(__file__), "LICENSE"), issuesdir)
+        
     if command == "list":
         print
         print "   #    Id     Title                   State  Date  Assign  Tags"
