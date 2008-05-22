@@ -827,6 +827,12 @@ parser.add_option("-v", "--verbose",
                   default = False,
                   help    = "report activity options.verbosely")
 
+parser.add_option("--print-new-bugs", 
+                  action = "store_true",
+                  dest = "printNewBugs",
+                  default = False,
+                  help = "prints out a formatted string with the bug summary and id. Usuful for in editor usage.")
+
 (options, args) = parser.parse_args()
 
 gitshelve.verbose = options.verbose
@@ -967,6 +973,8 @@ if __name__ == '__main__':
             print "Usage: %s title" % sys.argv[0]
         else:
             issue = issueSet.new_issue(args[0])
+            if options.printNewBugs:
+                print "TODO: %s (%s) " % (issue.title, issue.name[0:7])
 
 ######################################################################
 
