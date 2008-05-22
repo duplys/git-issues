@@ -812,7 +812,15 @@ def format_people_list(people, indent = 13):
 
 ######################################################################
 
-parser = optparse.OptionParser()
+parser = optparse.OptionParser(usage="""Usage: git-issues [--verbose] <command> [command-options]
+
+Commands:
+  init        Creates a copy of git-issues repository in .gitissues in the 
+              current git repository. 
+  list        Lists tickets for this repository
+  new         Creates a new ticket for this repository
+  show/dump   Shows the given ticket
+  change      Change options for the given ticket""")
 parser.add_option("-v", "--verbose",
                   action  = "store_true",
                   dest    = "verbose",
@@ -828,7 +836,7 @@ gitshelve.verbose = options.verbose
 if __name__ == '__main__':
 
     if len(args) == 0:
-        print "Show help here."
+        parser.print_help()
         sys.exit(1)
 
     command = args[0]
