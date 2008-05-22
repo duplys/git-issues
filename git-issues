@@ -953,19 +953,19 @@ if __name__ == '__main__':
 
     elif command == "change":
         if len(args) == 0:
-	    print "Usage: %s change issue_id field value" % sys.argv[0]
-	else:
-	    issue = issueSet[args[0]]
+            print "Usage: %s change issue_id field value" % sys.argv[0]
+        else:
+            issue = issueSet[args[0]]
 
-	    # jww (2008-05-13): Need to parse datetime, lists, and people
-	    eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
+            # jww (2008-05-13): Need to parse datetime, lists, and people
+            eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
 
 ######################################################################
 
     elif command == "new":
         if len(args) == 0:
             print "Usage: %s title" % sys.argv[0]
-	else:
+        else:
             issue = issueSet.new_issue(args[0])
 
 ######################################################################
