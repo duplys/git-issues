@@ -833,11 +833,18 @@ parser.add_option("--print-new-bugs",
                   default = False,
                   help = "prints out a formatted string with the bug summary and id. Usuful for in editor usage.")
 
+parser.add_option("--screen-width",
+                  dest="screenWidth",
+                  default=os.getenv("COLUMNS") or 79,
+                  help = "Width of the terminal we are printing to.")
+
 (options, args) = parser.parse_args()
 
 gitshelve.verbose = options.verbose
 
+
 ######################################################################
+
 
 if __name__ == '__main__':
 
@@ -881,14 +888,17 @@ if __name__ == '__main__':
         copy(join(dirname(__file__), "LICENSE"), issuesdir)
         
     if command == "list":
-        print
-        print "   #    Id     Title                   State  Date  Assign  Tags"
-        print "-------------------------------------------------------------------------------"
+        header = "   #    Id     Title%sState  Date  Assign  Tags"
+        width = int(options.screenWidth)
+        titleWidth = width - len(header) + 2
+        print header % "".join([" " for x in xrange(titleWidth)])
+        print "".join (["-" for x in xrange(width)])
 
         index = 1
         for item in issueSet.shelf.iteritems():
             issue = item[1].get_data()
-            print "%4d  %s  %-23s %-6s %5s %6s %s" % \
+            formatString = "%4d  %s  %-" + str(titleWidth+len("Title")-1) + "s %-6s %5s %6s %s"
+            print formatString % \
                 (index, issue.name[:7], issue.title, issue.status,
                  issue.created and issue.created.strftime('%m/%d'),
                  str(issue.author)[:6], '')
