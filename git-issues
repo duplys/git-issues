@@ -833,6 +833,12 @@ parser.add_option("--print-new-bugs",
                   default = False,
                   help = "prints out a formatted string with the bug summary and id. Usuful for in editor usage.")
 
+parser.add_option("--filter-status",
+                  dest="filterStatus",
+                  default="closed",
+                  help = """does not print a bug if it is in one of 
+the stati specified (column separated) by this option.""".replace("\n",""))
+
 parser.add_option("--screen-width",
                   dest="screenWidth",
                   default=os.getenv("COLUMNS") or 79,
@@ -895,8 +901,12 @@ if __name__ == '__main__':
         print "".join (["-" for x in xrange(width)])
 
         index = 1
+        filteredStati = options.filterStatus.split(":")
+        
         for item in issueSet.shelf.iteritems():
             issue = item[1].get_data()
+            if issue.status in filteredStati:
+                continue
             formatString = "%4d  %s  %-" + str(titleWidth+len("Title")-1) + "s %-6s %5s %6s %s"
             print formatString % \
                 (index, issue.name[:7], issue.title, issue.status,
