@@ -990,7 +990,8 @@ if __name__ == '__main__':
             issue = issueSet[args[0]]
 
             # jww (2008-05-13): Need to parse datetime, lists, and people
-            eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
+            method = getattr(issue, "set_" + args[1])
+            method(args[2])
 
 ######################################################################
 
