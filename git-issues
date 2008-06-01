@@ -844,6 +844,12 @@ parser.add_option("--screen-width",
                   default=os.getenv("COLUMNS") or 79,
                   help = "Width of the terminal we are printing to.")
 
+parser.add_option("--status",
+                  dest="status",
+                  default=None,
+                  metavar="STATUS",
+                  help="Set the status of the issue to STATUS when creating it.")
+
 (options, args) = parser.parse_args()
 
 gitshelve.verbose = options.verbose
@@ -993,8 +999,13 @@ if __name__ == '__main__':
             print "Usage: %s title" % sys.argv[0]
         else:
             issue = issueSet.new_issue(args[0])
+            if options.status:
+                issue.set_status(options.status)
+            else:
+                issue.set_status("TODO")
+            
             if options.printNewBugs:
-                print "TODO: %s (%s) " % (issue.title, issue.name[0:7])
+                print "%s: %s (%s)" % (issue.status, issue.title, issue.name[0:7])
 
 ######################################################################
 
