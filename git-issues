@@ -56,7 +56,7 @@ import cPickle
 
 from datetime   import datetime
 from subprocess import Popen, PIPE
-from os.path    import isdir, isfile, join
+from os.path    import isdir, isfile, join, basename
 
 ######################################################################
 
@@ -992,6 +992,15 @@ if __name__ == '__main__':
             # jww (2008-05-13): Need to parse datetime, lists, and people
             method = getattr(issue, "set_" + args[1])
             method(args[2])
+
+######################################################################
+
+    elif command == "close":
+        if len(args) == 0:
+            print "Usage: %s close <bug-id>" % basename(sys.argv[0])
+            sys.exit(1)
+        issue = issueSet[args[0]]
+        issue.set_status("closed")
 
 ######################################################################
 
