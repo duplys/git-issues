@@ -57,7 +57,8 @@ import cPickle
 from datetime   import datetime
 from subprocess import Popen, PIPE
 from os.path    import isdir, isfile, join, basename
-
+from tempfile   import mkstemp
+from commands   import getstatusoutput
 ######################################################################
 
 iso_fmt       = "%Y%m%dT%H%M%S"
@@ -992,6 +993,27 @@ if __name__ == '__main__':
             # jww (2008-05-13): Need to parse datetime, lists, and people
             method = getattr(issue, "set_" + args[1])
             method(args[2])
+
+######################################################################
+    elif command == "edit":
+        if len(args) == 0:
+            print "Usage: %s edit <bugid> <what>" % sys.argv[0]
+            sys.exit(1)
+        else:
+            issue = issueSet[args[0]]
+            fd, tempFile = mkstemp()
+            f = open(tempFile,"w")
+            f.write(getattr(issue, args[1]))
+            f.close()
+            
+            editCommand = "%s %s" % (os.getenv("VISUAL"), tempFile)
+            error, output = getstatusoutput(editCommand)
+            if error:
+                os.unlink(tempFile)
+                print "Error while executing %s" % editCommand
+                sys.exit(1)
+            getattr(issue, "set_"+args[1])(open(tempFile).read())
+            os.unlink(tempFile)
 
 ######################################################################
 
