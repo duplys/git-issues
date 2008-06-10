@@ -1006,7 +1006,7 @@ if __name__ == '__main__':
               sys.exit(1)              
             fd, tempFile = mkstemp()
             f = open(tempFile,"w")
-            f.write(getattr(issue, args[1]))
+            f.write(getattr(issue, args[1]) or "")
             f.close()
             
             editCommand = "%s %s" % (os.getenv("VISUAL"), tempFile)
