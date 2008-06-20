@@ -858,6 +858,21 @@ gitshelve.verbose = options.verbose
 
 ######################################################################
 
+def inputFromEditor(originalText):
+  fd, tempFile = mkstemp()
+  f = open(tempFile,"w")
+  f.write(originalText or "")
+  f.close()
+  
+  editCommand = "%s %s" % (os.getenv("VISUAL"), tempFile)
+  error, output = getstatusoutput(editCommand)
+  if error:
+      os.unlink(tempFile)
+      print "Error while executing %s" % editCommand
+      sys.exit(1)
+  contents = open(tempFile).read()
+  os.unlink(tempFile)
+  return contents
 
 if __name__ == '__main__':
 
@@ -1004,19 +1019,8 @@ if __name__ == '__main__':
             if len(args) != 2:
               print "Usage:\n\n%s edit <bugid> <what>" % sys.argv[0]
               sys.exit(1)
-            fd, tempFile = mkstemp()
-            f = open(tempFile,"w")
-            f.write(getattr(issue, args[1]) or "")
-            f.close()
-            
-            editCommand = "%s %s" % (os.getenv("VISUAL"), tempFile)
-            error, output = getstatusoutput(editCommand)
-            if error:
-                os.unlink(tempFile)
-                print "Error while executing %s" % editCommand
-                sys.exit(1)
-            getattr(issue, "set_"+args[1])(open(tempFile).read())
-            os.unlink(tempFile)
+            contents = inputFromEditor(getattr(issue, args[1]))
+            getattr(issue, "set_"+args[1])(contents)
 
 ######################################################################
 
