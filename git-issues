@@ -291,12 +291,27 @@ class IssueSet:
         self.add_issue(issue)
         return issue
 
+    def new_comment(self, issue, text):
+        comment = self.allocate_comment(issue, text)
+        self.add_comment(comment)
+        return comment
+
+    def comment_path(self, comment):
+        name = comment.issue.get_name()
+        return "%s/%s/comment_%s_%s.xml" %(name[:2], 
+                                           name[2:], 
+                                           datetime.now().isoformat(),
+                                           comment.comment)
     def issue_path(self, issue):
         name = issue.get_name()
         return '%s/%s/issue.xml' % (name[:2], name[2:])
 
     def add_issue(self, issue):
         self.shelf[self.issue_path(issue)] = issue
+        self.mark_dirty(self_dirty = False)
+
+    def add_comment(self, comment):
+        self.shelf[self.comment_path(comment)] = comment
         self.mark_dirty(self_dirty = False)
 
     def __getitem__(self, idx_or_partial_hash):
@@ -744,6 +759,16 @@ class GitIssue(Issue):
             self.name = name
         return self.name
 
+class GitComment(Comment):
+    def get_name(self):
+        if not self.name:
+            hash_func = self.issue.issueSet.shelf.hash_blob
+            name = hash_blob(str(self.created) 
+                             + str(self.author) 
+                             + self.comment)
+            self.name = name
+        return self.name
+
 class xml_gitbook(gitshelve.gitbook):
     def serialize_data(self, data):
         return object_to_string(data)
@@ -777,6 +802,9 @@ class GitIssueSet(IssueSet):
     def allocate_issue(self, title):
         return GitIssue(self, self.current_author(), title)
 
+    def allocate_comment(self, issue, commentText):
+        return GitComment(issue, self.current_author(), commentText)
+        
 ######################################################################
 
 def format_long_text(text, indent = 13):
