@@ -1047,7 +1047,8 @@ if __name__ == '__main__':
                 print "%s: %s (%s)" % (issue.status, issue.title, issue.name[0:7])
 
 ######################################################################
-
+    else:
+        print "Unknown command %s" % command
     # If any of the commands made the issueSet dirty, (possibly) update the
     # repository and write out a new cache
 
