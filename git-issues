@@ -300,8 +300,9 @@ class IssueSet:
 
     def comment_path(self, comment):
         name = comment.issue.get_name()
-        return "%s/%s/comment_%s_%s.xml" %(name[:2], 
+        return "%s/%s/comment_%s_%s_%s.xml" %(name[:2], 
                                            name[2:], 
+                                           comment.name,
                                            datetime.now().isoformat(),
                                            comment.comment)
     def issue_path(self, issue):
@@ -322,7 +323,14 @@ class IssueSet:
             idx = int(idx_or_partial_hash) - 1
             comment = self.shelf[self.shelf.keys()[idx]]
         except:
-            clean = lambda x: x.split('comment')[0].replace('/', '')
+            print [key for key in self.shelf.iterkeys()]
+            def getCommentId(x):
+                if not 'comment_' in x:
+                    return ""
+                x = x.split('comment_')[1]
+                x = x.split('_')[0]
+                return x
+            clean = lambda x: getCommentId(x)
             matching = [(clean(key), key) for key in self.shelf.iterkeys()
                         if clean(key).startswith(idx_or_partial_hash) and not "issue.xml" in clean(key)]
             if len(matching) == 0:
@@ -1022,7 +1030,8 @@ if __name__ == '__main__':
             print "Shows needs an index or Id."
 
         issue = issueSet[args[0]]
-        comments = "\n".join(["Comment (%s): %s" % (comment[0:7], comment[0:7])
+        comments = "\n       ".join(["Comment (%s): %s" % (comment[0:7], 
+                                                    issueSet.get_comment(comment[0:7]).comment)
                              for comment in issue.comments])
         if command == "show":
             sys.stdout.write("""
