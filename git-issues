@@ -85,6 +85,7 @@ class Person:
 
 class Comment:
     def __init__(self, issue, author, comment):
+        self.name        = None
         self.issue       = issue
         self.author      = author
         self.comment     = comment
@@ -92,6 +93,7 @@ class Comment:
         self.modified    = None
         self.self_dirty  = True
         self.attachments = []   # records filename and blob
+        self.issue.comments[self.get_name()] = self # register into issue
 
     def mark_dirty(self):
         self.modified   = datetime.now()
@@ -103,7 +105,7 @@ class Comment:
         del odict['self_dirty']      # remove self dirty flag
         return odict
 
-    def __setstate__(self,dict):
+    def __setstate__(self, dict):
         self.__dict__.update(dict)   # update attributes
         self.self_dirty = False
 
@@ -314,6 +316,27 @@ class IssueSet:
         self.shelf[self.comment_path(comment)] = comment
         self.mark_dirty(self_dirty = False)
 
+    def get_comment(self, idx_or_partial_hash):
+        comment = None
+        try:
+            idx = int(idx_or_partial_hash) - 1
+            comment = self.shelf[self.shelf.keys()[idx]]
+        except:
+            clean = lambda x: x.split('comment')[0].replace('/', '')
+            matching = [(clean(key), key) for key in self.shelf.iterkeys()
+                        if clean(key).startswith(idx_or_partial_hash) and not "issue.xml" in clean(key)]
+            if len(matching) == 0:
+                pass
+            elif len(matching) == 1:
+                comment = self.shelf[matching[0][1]]
+            else:
+                print ("Ambiguous hash matches:\n" +
+                       '\t\n'.join(a[0] for a in matching))
+        if not comment:
+            raise Exception("There is no issue matching the identifier '%s'.\n" %
+                            idx_or_partial_hash)
+        return comment
+            
     def __getitem__(self, idx_or_partial_hash):
         issue = None
         try:
@@ -322,7 +345,7 @@ class IssueSet:
         except:
             clean = lambda x: x.replace('issue.xml', '').replace('/','')
             matching = [(clean(key), key) for key in self.shelf.iterkeys()
-                        if clean(key).startswith(idx_or_partial_hash)]
+                        if clean(key).startswith(idx_or_partial_hash) and not "comment" in clean(key)]
             if len(matching) == 0:
                 pass
             elif len(matching) == 1:
@@ -644,6 +667,25 @@ class XmlIssueBuilder:
 
     build = classmethod(build)
 
+class XmlCommentBuilder:
+    def build(cls, comment, node, doc):
+        commentNode = doc.createElement("comment")
+
+        created = doc.createElement("created")
+        XmlBuilder.build(comment.created, created, doc)
+        commentNode.appendChild(created)
+
+        author = doc.createElement("author")
+        XmlBuilder.build(comment.author, author, doc)
+        commentNode.appendChild(author)
+
+        commentText = doc.createElement("comment")
+        XmlBuilder.build(comment.comment, commentText, doc)
+        commentNode.appendChild(commentText)
+        node.appendChild(commentNode)
+
+    build = classmethod(build)
+
 #class XmlIssueChangesBuilder:
 #    def build(cls, data, node, doc):
 #        changes = doc.createElement("changes")
@@ -741,7 +783,12 @@ class XmlBuilder:
             assert not doc
             doc = xml.dom.minidom.Document()
             XmlIssueSetBuilder.build(data, doc, doc)
+        elif isinstance(data, Comment):
+            assert not doc
+            doc = xml.dom.minidom.Document()
+            XmlCommentBuilder.build(data, doc, doc)
         else:
+            print "Unknown type %s" % data
             assert False
 
         return doc
@@ -763,7 +810,7 @@ class GitComment(Comment):
     def get_name(self):
         if not self.name:
             hash_func = self.issue.issueSet.shelf.hash_blob
-            name = hash_blob(str(self.created) 
+            name = hash_func(str(self.created) 
                              + str(self.author) 
                              + self.comment)
             self.name = name
@@ -954,6 +1001,8 @@ if __name__ == '__main__':
         filteredStati = options.filterStatus.split(":")
         
         for item in issueSet.shelf.iteritems():
+            if "comment" in item[0]:
+                continue
             issue = item[1].get_data()
             if issue.status in filteredStati:
                 continue
@@ -965,7 +1014,7 @@ if __name__ == '__main__':
             index += 1
 
         print
-
+        
 ######################################################################
 
     elif command == "show" or command == "dump":
@@ -973,6 +1022,8 @@ if __name__ == '__main__':
             print "Shows needs an index or Id."
 
         issue = issueSet[args[0]]
+        comments = "\n".join(["Comment (%s): %s" % (comment[0:7], comment[0:7])
+                             for comment in issue.comments])
         if command == "show":
             sys.stdout.write("""
           Title: %s
@@ -998,7 +1049,7 @@ if __name__ == '__main__':
 
         Created: %s
        Modified: %s
-
+       %s
     """ % (issue.title,
            format_long_text(issue.summary),
 
@@ -1021,7 +1072,8 @@ if __name__ == '__main__':
            issue.tags or "",
 
            issue.created,
-           issue.modified))
+           issue.modified,
+           comments))
         else:
             write_object(issue)
 
@@ -1073,6 +1125,14 @@ if __name__ == '__main__':
             
             if options.printNewBugs:
                 print "%s: %s (%s)" % (issue.status, issue.title, issue.name[0:7])
+    elif command == "comment":
+        if len(args) == 0:
+            print "Usage: %s comment <issue-id> <comment-title>" % sys.argv[0]
+            sys.exit(1)
+        issue = issueSet[args[0]]
+        comment = issueSet.new_comment(issue, args[1])
+        if options.printNewBugs:
+            print "### Comment(%s): %s" % (comment.name[0:7], comment.comment)
 
 ######################################################################
     else:
