@@ -17,9 +17,9 @@ from shutil import copy
 from sys import argv
 
 try:
-  resolvedLink = readlink(__file__)
+    resolvedLink = readlink(__file__)
 except:
-  resolvedLink = None
+    resolvedLink = None
 
 if resolvedLink and resolvedLink[0] != "/":
     resolvedLink = join(dirname(__file__), resolvedLink)
@@ -942,26 +942,26 @@ gitshelve.verbose = options.verbose
 ######################################################################
 
 def inputFromEditor(originalText):
-  fd, tempFile = mkstemp()
-  f = open(tempFile,"w")
-  f.write(originalText or "")
-  f.close()
+    fd, tempFile = mkstemp()
+    f = open(tempFile,"w")
+    f.write(originalText or "")
+    f.close()
 
-  defaultEditor = "vi"
-  if platform.system() == "Windows":
-     defaultEditor = "notepad"
-  if os.environ.has_key("VISUAL"):
-     defaultEditor = os.getenv("VISUAL")
-  elif os.environ.has_key("EDITOR"):
-     defualtEditor = os.getenv("EDITOR")
-  editCommand = "%s %s" % (defaultEditor, tempFile)
-  if os.system(editCommand) != 0:
-      os.unlink(tempFile)
-      print "Error while executing %s" % editCommand
-      sys.exit(1)
-  contents = open(tempFile).read()
-  os.unlink(tempFile)
-  return contents
+    defaultEditor = "vi"
+    if platform.system() == "Windows":
+        defaultEditor = "notepad"
+    if os.environ.has_key("VISUAL"):
+        defaultEditor = os.getenv("VISUAL")
+    elif os.environ.has_key("EDITOR"):
+        defualtEditor = os.getenv("EDITOR")
+    editCommand = "%s %s" % (defaultEditor, tempFile)
+    if os.system(editCommand) != 0:
+        os.unlink(tempFile)
+        print "Error while executing %s" % editCommand
+        sys.exit(1)
+    contents = open(tempFile).read()
+    os.unlink(tempFile)
+    return contents
 
 if __name__ == '__main__':
 
