@@ -39,7 +39,8 @@ if ".gitissues" not in __file__:
         #print "git-issues found in %s. Using it in place of the one in %s" % (issuesExec, __file__)
         execv(issuesExec, [issuesExec]+ argv[1:])
         assert ("This should never be called" and False)
-    
+
+import platform
 import sys
 import os
 import re
@@ -58,7 +59,6 @@ from datetime   import datetime
 from subprocess import Popen, PIPE
 from os.path    import isdir, isfile, join, basename
 from tempfile   import mkstemp
-from commands   import getstatusoutput
 ######################################################################
 
 iso_fmt       = "%Y%m%dT%H%M%S"
@@ -946,10 +946,16 @@ def inputFromEditor(originalText):
   f = open(tempFile,"w")
   f.write(originalText or "")
   f.close()
-  
-  editCommand = "%s %s" % (os.getenv("VISUAL"), tempFile)
-  error, output = getstatusoutput(editCommand)
-  if error:
+
+  defaultEditor = "vi"
+  if platform.system() == "Windows":
+     defaultEditor = "notepad"
+  if os.environ.has_key("VISUAL"):
+     defaultEditor = os.getenv("VISUAL")
+  elif os.environ.has_key("EDITOR"):
+     defualtEditor = os.getenv("EDITOR")
+  editCommand = "%s %s" % (defaultEditor, tempFile)
+  if os.system(editCommand) != 0:
       os.unlink(tempFile)
       print "Error while executing %s" % editCommand
       sys.exit(1)
