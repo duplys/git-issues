@@ -1065,7 +1065,7 @@ if __name__ == '__main__':
         Created: %s
        Modified: %s
        %s
-    """ % (issue.title,
+"""     % (issue.title,
            format_long_text(issue.summary),
 
            format_long_text(issue.description),
