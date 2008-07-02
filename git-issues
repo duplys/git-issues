@@ -894,6 +894,23 @@ def format_people_list(people, indent = 13):
 
     return buffer.getvalue()
 
+def terminal_width():
+    """Return terminal width."""
+    width = 0
+    try:
+        import struct, fcntl, termios
+        s = struct.pack('HHHH', 0, 0, 0, 0)
+        x = fcntl.ioctl(1, termios.TIOCGWINSZ, s)
+        width = struct.unpack('HHHH', x)[1]
+    except:
+        pass
+    if width <= 0:
+        if os.environ.has_key("COLUMNS"):
+            width = int(os.getenv("COLUMNS"))
+        if width <= 0:
+            width = 80
+    return width
+
 ######################################################################
 
 parser = optparse.OptionParser(usage="""Usage: git-issues [options] <command> [command-options]
@@ -928,7 +945,7 @@ the stati specified (column separated) by this option.""".replace("\n",""))
 
 parser.add_option("--screen-width",
                   dest="screenWidth",
-                  default=os.getenv("COLUMNS") or 79,
+                  default=terminal_width(),
                   help = "Width of the terminal we are printing to.")
 
 parser.add_option("--status",
