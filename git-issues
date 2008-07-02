@@ -1054,63 +1054,63 @@ if __name__ == '__main__':
     elif command == "show" or command == "dump":
         if len(args) == 0:
             print "Usage: %s %s <issue-id | index>" % (sys.argv[0], command)
-
-        issue = issueSet[args[0]]
-        comments = "\n       ".join(["Comment (%s): %s" % (comment[0:7], 
-                                                    issueSet.get_comment(comment[0:7]).comment)
-                             for comment in issue.comments])
-        if command == "show":
-            sys.stdout.write("""
-          Title: %s
-        Summary: %s
-
-    Description: %s
-
-         Author: %s
-       Reporter: %s
-          Owner: %s
-       Assigned: %s
-             Cc: %s
-
-           Type: %s
-         Status: %s
-     Resolution: %s
-     Components: %s
-        Version: %s
-      Milestone: %s
-       Severity: %s
-       Priority: %s
-           Tags: %s
-
-        Created: %s
-       Modified: %s
-       %s
-"""     % (issue.title,
-           format_long_text(issue.summary),
-
-           format_long_text(issue.description),
-
-           issue.author,
-           format_people_list(issue.reporters),
-           format_people_list(issue.owners),
-           format_people_list(issue.assigned),
-           format_people_list(issue.carbons),
-
-           issue.issue_type,
-           issue.status,
-           issue.resolution or "",
-           issue.components or "",
-           issue.version or "",
-           issue.milestone or "",
-           issue.severity,
-           issue.priority,
-           issue.tags or "",
-
-           issue.created,
-           issue.modified,
-           comments))
         else:
-            write_object(issue)
+            issue = issueSet[args[0]]
+            comments = "\n       ".join(["Comment (%s): %s" % (comment[0:7],
+                                        issueSet.get_comment(comment[0:7]).comment)
+                                        for comment in issue.comments])
+            if command == "show":
+                sys.stdout.write("""
+              Title: %s
+            Summary: %s
+
+        Description: %s
+
+             Author: %s
+           Reporter: %s
+              Owner: %s
+           Assigned: %s
+                 Cc: %s
+
+               Type: %s
+             Status: %s
+         Resolution: %s
+         Components: %s
+            Version: %s
+          Milestone: %s
+           Severity: %s
+           Priority: %s
+               Tags: %s
+
+            Created: %s
+           Modified: %s
+           %s
+"""         % (issue.title,
+               format_long_text(issue.summary),
+
+               format_long_text(issue.description),
+
+               issue.author,
+               format_people_list(issue.reporters),
+               format_people_list(issue.owners),
+               format_people_list(issue.assigned),
+               format_people_list(issue.carbons),
+
+               issue.issue_type,
+               issue.status,
+               issue.resolution or "",
+               issue.components or "",
+               issue.version or "",
+               issue.milestone or "",
+               issue.severity,
+               issue.priority,
+               issue.tags or "",
+
+               issue.created,
+               issue.modified,
+               comments))
+            else:
+                write_object(issue)
 
 ######################################################################
 
