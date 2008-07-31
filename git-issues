@@ -994,8 +994,8 @@ if __name__ == '__main__':
 
 ######################################################################
 
-    # jww (2008-05-12): Pick the appropriate IssueSet to used based on what we
-    # find in our environment.
+    # jww (2008-05-12): Pick the appropriate IssueSet to use based on the
+    # environment.
 
     issueSet = GitIssueSet().load_state()
 
@@ -1060,55 +1060,47 @@ if __name__ == '__main__':
                                         issueSet.get_comment(comment[0:7]).comment)
                                         for comment in issue.comments])
             if command == "show":
-                sys.stdout.write("""
-              Title: %s
-            Summary: %s
+                if issue.title:
+                    print "          Title:", issue.title
+                if issue.summary:
+                    print "        Summary:", format_long_text(issue.summary)
+                    print
+                if issue.description:
+                    print "    Description:", format_long_text(issue.description)
+                    print
+                if issue.author:
+                    print "         Author:", issue.author
+                if issue.reporters:
+                    print "    Reporter(s):", format_people_list(issue.reporters)
+                if issue.owners:
+                    print "       Owner(s):", format_people_list(issue.owners)
+                if issue.assigned:
+                    print "       Assigned:", format_people_list(issue.assigned)
+                if issue.carbons:
+                    print "             Cc:", format_people_list(issue.carbons)
 
-        Description: %s
+                if issue.issue_type:
+                    print "           Type:", issue.issue_type
+                if issue.status:
+                    print "         Status:", issue.status
+                if issue.resolution:
+                    print "     Resolution:", issue.resolution
+                if issue.components:
+                    print "     Components:", issue.components
+                if issue.version:
+                    print "        Version:", issue.version
+                if issue.milestone:
+                    print "      Milestone:", issue.milestone
+                if issue.severity:
+                    print "       Severity:", issue.severity
+                if issue.priority:
+                    print "       Priority:", issue.priority
+                if issue.tags:
+                    print "           Tags:", issue.tags
 
-             Author: %s
-           Reporter: %s
-              Owner: %s
-           Assigned: %s
-                 Cc: %s
-
-               Type: %s
-             Status: %s
-         Resolution: %s
-         Components: %s
-            Version: %s
-          Milestone: %s
-           Severity: %s
-           Priority: %s
-               Tags: %s
-
-            Created: %s
-           Modified: %s
-           %s
-"""         % (issue.title,
-               format_long_text(issue.summary),
-
-               format_long_text(issue.description),
-
-               issue.author,
-               format_people_list(issue.reporters),
-               format_people_list(issue.owners),
-               format_people_list(issue.assigned),
-               format_people_list(issue.carbons),
-
-               issue.issue_type,
-               issue.status,
-               issue.resolution or "",
-               issue.components or "",
-               issue.version or "",
-               issue.milestone or "",
-               issue.severity,
-               issue.priority,
-               issue.tags or "",
-
-               issue.created,
-               issue.modified,
-               comments))
+                print "        Created:", issue.created
+                if issue.modified:
+                    print "       Modified:", issue.modified
             else:
                 write_object(issue)
 
