@@ -66,10 +66,10 @@ class GitError(Exception):
 
     def __str__(self):
         if self.stderr:
-            return "Git command failed: git-%s %s: %s" % \
+            return "Git command failed: git %s %s: %s" % \
                 (self.cmd, self.args, self.stderr)
         else:
-            return "Git command failed: git-%s %s" % (self.cmd, self.args)
+            return "Git command failed: git %s %s" % (self.cmd, self.args)
 
 def git(cmd, *args, **kwargs):
     restart = True
@@ -79,7 +79,7 @@ def git(cmd, *args, **kwargs):
             stdin_mode = PIPE
 
         if verbose:
-            print "Command: git-%s %s" % (cmd, join(args, ' '))
+            print "Command: git %s %s" % (cmd, join(args, ' '))
             if kwargs.has_key('input'):
                 print "Input: <<EOF"
                 print kwargs['input'],
@@ -92,12 +92,12 @@ def git(cmd, *args, **kwargs):
 
             git_dir = environ['GIT_DIR']
             if not os.path.isdir(git_dir):
-                proc = Popen('git-init', env = environ,
+                proc = Popen(('git', 'init'), env = environ,
                              stdout = PIPE, stderr = PIPE)
                 if proc.wait() != 0:
                     raise GitError('init', [], {}, proc.stderr.read())
 
-        proc = Popen(('git-' + cmd,) + args, env = environ,
+        proc = Popen(('git', cmd) + args, env = environ,
                      stdin  = stdin_mode,
                      stdout = PIPE,
                      stderr = PIPE)
