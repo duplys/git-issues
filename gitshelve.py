@@ -220,6 +220,8 @@ class gitshelve(dict):
         ls_tree = split(self.git('ls-tree', '-r', '-t', '-z', self.head),
                         '\0')
         for line in ls_tree:
+            if not line:
+                continue
             match = self.ls_tree_pat.match(line)
             assert match
 

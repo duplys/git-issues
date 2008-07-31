@@ -11,6 +11,36 @@
 # 2. use -z flag for ls-tree
 # 3. use UTC throughout
 
+from os.path import split, join, exists, dirname
+from os import getcwd, makedirs, execv, readlink
+from shutil import copy
+from sys import argv
+
+try:
+    resolvedLink = readlink(__file__)
+except:
+    resolvedLink = None
+
+if resolvedLink and resolvedLink[0] != "/":
+    resolvedLink = join(dirname(__file__), resolvedLink)
+if resolvedLink:
+    #print "Symlink found, using %s instead" % resolvedLink
+    execv(resolvedLink, [resolvedLink] + argv[1:])
+
+path = getcwd()
+
+if ".gitissues" not in __file__: 
+    while not exists(join(path,".gitissues")):
+        path,extra = split(path)
+        if not extra:
+            break
+    issuesExec = join(path,".gitissues/git-issues")
+    if exists(issuesExec):
+        #print "git-issues found in %s. Using it in place of the one in %s" % (issuesExec, __file__)
+        execv(issuesExec, [issuesExec]+ argv[1:])
+        assert ("This should never be called" and False)
+
+import platform
 import sys
 import os
 import re
@@ -27,8 +57,8 @@ import cPickle
 
 from datetime   import datetime
 from subprocess import Popen, PIPE
-from os.path    import isdir, isfile, join
-
+from os.path    import isdir, isfile, join, basename
+from tempfile   import mkstemp
 ######################################################################
 
 iso_fmt       = "%Y%m%dT%H%M%S"
@@ -55,6 +85,7 @@ class Person:
 
 class Comment:
     def __init__(self, issue, author, comment):
+        self.name        = None
         self.issue       = issue
         self.author      = author
         self.comment     = comment
@@ -62,6 +93,7 @@ class Comment:
         self.modified    = None
         self.self_dirty  = True
         self.attachments = []   # records filename and blob
+        self.issue.comments[self.get_name()] = self # register into issue
 
     def mark_dirty(self):
         self.modified   = datetime.now()
@@ -73,7 +105,7 @@ class Comment:
         del odict['self_dirty']      # remove self dirty flag
         return odict
 
-    def __setstate__(self,dict):
+    def __setstate__(self, dict):
         self.__dict__.update(dict)   # update attributes
         self.self_dirty = False
 
@@ -261,6 +293,18 @@ class IssueSet:
         self.add_issue(issue)
         return issue
 
+    def new_comment(self, issue, text):
+        comment = self.allocate_comment(issue, text)
+        self.add_comment(comment)
+        return comment
+
+    def comment_path(self, comment):
+        name = comment.issue.get_name()
+        return "%s/%s/comment_%s_%s_%s.xml" %(name[:2], 
+                                           name[2:], 
+                                           comment.name,
+                                           datetime.now().isoformat(),
+                                           comment.comment)
     def issue_path(self, issue):
         name = issue.get_name()
         return '%s/%s/issue.xml' % (name[:2], name[2:])
@@ -269,6 +313,38 @@ class IssueSet:
         self.shelf[self.issue_path(issue)] = issue
         self.mark_dirty(self_dirty = False)
 
+    def add_comment(self, comment):
+        self.shelf[self.comment_path(comment)] = comment
+        self.mark_dirty(self_dirty = False)
+
+    def get_comment(self, idx_or_partial_hash):
+        comment = None
+        try:
+            idx = int(idx_or_partial_hash) - 1
+            comment = self.shelf[self.shelf.keys()[idx]]
+        except:
+            print [key for key in self.shelf.iterkeys()]
+            def getCommentId(x):
+                if not 'comment_' in x:
+                    return ""
+                x = x.split('comment_')[1]
+                x = x.split('_')[0]
+                return x
+            clean = lambda x: getCommentId(x)
+            matching = [(clean(key), key) for key in self.shelf.iterkeys()
+                        if clean(key).startswith(idx_or_partial_hash) and not "issue.xml" in clean(key)]
+            if len(matching) == 0:
+                pass
+            elif len(matching) == 1:
+                comment = self.shelf[matching[0][1]]
+            else:
+                print ("Ambiguous hash matches:\n" +
+                       '\t\n'.join(a[0] for a in matching))
+        if not comment:
+            raise Exception("There is no issue matching the identifier '%s'.\n" %
+                            idx_or_partial_hash)
+        return comment
+            
     def __getitem__(self, idx_or_partial_hash):
         issue = None
         try:
@@ -277,7 +353,7 @@ class IssueSet:
         except:
             clean = lambda x: x.replace('issue.xml', '').replace('/','')
             matching = [(clean(key), key) for key in self.shelf.iterkeys()
-                        if clean(key).startswith(idx_or_partial_hash)]
+                        if clean(key).startswith(idx_or_partial_hash) and not "comment" in clean(key)]
             if len(matching) == 0:
                 pass
             elif len(matching) == 1:
@@ -599,6 +675,25 @@ class XmlIssueBuilder:
 
     build = classmethod(build)
 
+class XmlCommentBuilder:
+    def build(cls, comment, node, doc):
+        commentNode = doc.createElement("comment")
+
+        created = doc.createElement("created")
+        XmlBuilder.build(comment.created, created, doc)
+        commentNode.appendChild(created)
+
+        author = doc.createElement("author")
+        XmlBuilder.build(comment.author, author, doc)
+        commentNode.appendChild(author)
+
+        commentText = doc.createElement("comment")
+        XmlBuilder.build(comment.comment, commentText, doc)
+        commentNode.appendChild(commentText)
+        node.appendChild(commentNode)
+
+    build = classmethod(build)
+
 #class XmlIssueChangesBuilder:
 #    def build(cls, data, node, doc):
 #        changes = doc.createElement("changes")
@@ -696,7 +791,12 @@ class XmlBuilder:
             assert not doc
             doc = xml.dom.minidom.Document()
             XmlIssueSetBuilder.build(data, doc, doc)
+        elif isinstance(data, Comment):
+            assert not doc
+            doc = xml.dom.minidom.Document()
+            XmlCommentBuilder.build(data, doc, doc)
         else:
+            print "Unknown type %s" % data
             assert False
 
         return doc
@@ -711,6 +811,16 @@ class GitIssue(Issue):
             hash_func = self.issueSet.shelf.hash_blob
             name = hash_func(str(self.created) + str(self.author) +
                              self.title)
+            self.name = name
+        return self.name
+
+class GitComment(Comment):
+    def get_name(self):
+        if not self.name:
+            hash_func = self.issue.issueSet.shelf.hash_blob
+            name = hash_func(str(self.created) 
+                             + str(self.author) 
+                             + self.comment)
             self.name = name
         return self.name
 
@@ -747,6 +857,9 @@ class GitIssueSet(IssueSet):
     def allocate_issue(self, title):
         return GitIssue(self, self.current_author(), title)
 
+    def allocate_comment(self, issue, commentText):
+        return GitComment(issue, self.current_author(), commentText)
+        
 ######################################################################
 
 def format_long_text(text, indent = 13):
@@ -781,25 +894,99 @@ def format_people_list(people, indent = 13):
 
     return buffer.getvalue()
 
+def terminal_width():
+    """Return terminal width."""
+    width = 0
+    try:
+        import struct, fcntl, termios
+        s = struct.pack('HHHH', 0, 0, 0, 0)
+        x = fcntl.ioctl(1, termios.TIOCGWINSZ, s)
+        width = struct.unpack('HHHH', x)[1]
+    except:
+        pass
+    if width <= 0:
+        if os.environ.has_key("COLUMNS"):
+            width = int(os.getenv("COLUMNS"))
+        if width <= 0:
+            width = 80
+    return width
+
 ######################################################################
 
-parser = optparse.OptionParser()
+parser = optparse.OptionParser(usage="""Usage: git-issues [options] <command> [command-options]
+
+Commands:
+  init        Creates a copy of git-issues repository in .gitissues in the
+              current git repository.
+  list        Lists tickets for this repository
+  new         Creates a new ticket for this repository
+  show/dump   Shows the given ticket
+  change      Change options for the given ticket
+  edit        edit options for the given ticket in text editor
+  comment     Add a comment to the given ticket
+  close       Close the given ticket""")
 parser.add_option("-v", "--verbose",
                   action  = "store_true",
                   dest    = "verbose",
                   default = False,
                   help    = "report activity options.verbosely")
 
+parser.add_option("--print-new-bugs", 
+                  action = "store_true",
+                  dest = "printNewBugs",
+                  default = False,
+                  help = "prints out a formatted string with the bug summary and id. Usuful for in editor usage.")
+
+parser.add_option("--filter-status",
+                  dest="filterStatus",
+                  default="closed",
+                  help = """does not print a bug if it is in one of 
+the stati specified (column separated) by this option.""".replace("\n",""))
+
+parser.add_option("--screen-width",
+                  dest="screenWidth",
+                  default=terminal_width(),
+                  help = "Width of the terminal we are printing to.")
+
+parser.add_option("--status",
+                  dest="status",
+                  default=None,
+                  metavar="STATUS",
+                  help="Set the status of the issue to STATUS when creating it.")
+
 (options, args) = parser.parse_args()
 
 gitshelve.verbose = options.verbose
 
+
 ######################################################################
+
+def inputFromEditor(originalText):
+    fd, tempFile = mkstemp()
+    f = open(tempFile,"w")
+    f.write(originalText or "")
+    f.close()
+
+    defaultEditor = "vi"
+    if platform.system() == "Windows":
+        defaultEditor = "notepad"
+    if os.environ.has_key("VISUAL"):
+        defaultEditor = os.getenv("VISUAL")
+    elif os.environ.has_key("EDITOR"):
+        defualtEditor = os.getenv("EDITOR")
+    editCommand = "%s %s" % (defaultEditor, tempFile)
+    if os.system(editCommand) != 0:
+        os.unlink(tempFile)
+        print "Error while executing %s" % editCommand
+        sys.exit(1)
+    contents = open(tempFile).read()
+    os.unlink(tempFile)
+    return contents
 
 if __name__ == '__main__':
 
     if len(args) == 0:
-        print "Show help here."
+        parser.print_help()
         sys.exit(1)
 
     command = args[0]
@@ -814,102 +1001,180 @@ if __name__ == '__main__':
 
 ######################################################################
 
+    if command == "init":
+        from os.path import split, join, exists, dirname
+        from os import getcwd, makedirs
+        from shutil import copy
+        path = getcwd()
+        while not exists(join(path,".git")):
+            path,extra = split(path)
+            if not extra:
+                print "Unable to find a git repository. "
+                print "Make sure you ran `git init` at some point."
+                sys.exit(1)
+        issuesdir = join(path,".gitissues")
+        if exists(issuesdir):
+            print "git-issues helper directory %s already exists." % issuesdir
+            print "Doing nothing."
+            sys.exit(1)
+        makedirs(issuesdir)
+        copy(__file__, issuesdir)
+        copy(join(dirname(__file__), "gitshelve.py"), issuesdir)
+        copy(join(dirname(__file__), "t_gitshelve.py"), issuesdir)
+        copy(join(dirname(__file__), "README"), issuesdir)
+        copy(join(dirname(__file__), "LICENSE"), issuesdir)
+        
     if command == "list":
-        print
-        print "   #    Id     Title                   State  Date  Assign  Tags"
-        print "-------------------------------------------------------------------------------"
+        header = "   #    Id     Title%sState  Date  Assign  Tags"
+        width = int(options.screenWidth)
+        titleWidth = width - len(header) + 2
+        print header % "".join([" " for x in xrange(titleWidth)])
+        print "".join (["-" for x in xrange(width)])
 
         index = 1
+        filteredStati = options.filterStatus.split(":")
+        
         for item in issueSet.shelf.iteritems():
+            if "comment" in item[0]:
+                continue
             issue = item[1].get_data()
-            print "%4d  %s  %-23s %-6s %5s %6s %s" % \
+            if issue.status in filteredStati:
+                continue
+            formatString = "%4d  %s  %-" + str(titleWidth+len("Title")-1) + "s %-6s %5s %6s %s"
+            print formatString % \
                 (index, issue.name[:7], issue.title, issue.status,
                  issue.created and issue.created.strftime('%m/%d'),
                  str(issue.author)[:6], '')
             index += 1
 
         print
-
+        
 ######################################################################
 
     elif command == "show" or command == "dump":
         if len(args) == 0:
-            print "Shows needs an index or Id."
-
-        issue = issueSet[args[0]]
-        if command == "show":
-            sys.stdout.write("""
-          Title: %s
-        Summary: %s
-
-    Description: %s
-
-         Author: %s
-       Reporter: %s
-          Owner: %s
-       Assigned: %s
-             Cc: %s
-
-           Type: %s
-         Status: %s
-     Resolution: %s
-     Components: %s
-        Version: %s
-      Milestone: %s
-       Severity: %s
-       Priority: %s
-           Tags: %s
-
-        Created: %s
-       Modified: %s
-
-    """ % (issue.title,
-           format_long_text(issue.summary),
-
-           format_long_text(issue.description),
-
-           issue.author,
-           format_people_list(issue.reporters),
-           format_people_list(issue.owners),
-           format_people_list(issue.assigned),
-           format_people_list(issue.carbons),
-
-           issue.issue_type,
-           issue.status,
-           issue.resolution or "",
-           issue.components or "",
-           issue.version or "",
-           issue.milestone or "",
-           issue.severity,
-           issue.priority,
-           issue.tags or "",
-
-           issue.created,
-           issue.modified))
+            print "Usage: %s %s <issue-id | index>" % (sys.argv[0], command)
         else:
-            write_object(issue)
+            issue = issueSet[args[0]]
+            comments = "\n       ".join(["Comment (%s): %s" % (comment[0:7],
+                                        issueSet.get_comment(comment[0:7]).comment)
+                                        for comment in issue.comments])
+            if command == "show":
+                sys.stdout.write("""
+              Title: %s
+            Summary: %s
+
+        Description: %s
+
+             Author: %s
+           Reporter: %s
+              Owner: %s
+           Assigned: %s
+                 Cc: %s
+
+               Type: %s
+             Status: %s
+         Resolution: %s
+         Components: %s
+            Version: %s
+          Milestone: %s
+           Severity: %s
+           Priority: %s
+               Tags: %s
+
+            Created: %s
+           Modified: %s
+           %s
+"""         % (issue.title,
+               format_long_text(issue.summary),
+
+               format_long_text(issue.description),
+
+               issue.author,
+               format_people_list(issue.reporters),
+               format_people_list(issue.owners),
+               format_people_list(issue.assigned),
+               format_people_list(issue.carbons),
+
+               issue.issue_type,
+               issue.status,
+               issue.resolution or "",
+               issue.components or "",
+               issue.version or "",
+               issue.milestone or "",
+               issue.severity,
+               issue.priority,
+               issue.tags or "",
+
+               issue.created,
+               issue.modified,
+               comments))
+            else:
+                write_object(issue)
 
 ######################################################################
 
     elif command == "change":
         if len(args) == 0:
-	    print "Usage: %s change issue_id field value" % sys.argv[0]
-	else:
-	    issue = issueSet[args[0]]
+            print "Usage: %s change <issue-id> <field> <value>" % sys.argv[0]
+        else:
+            issue = issueSet[args[0]]
 
-	    # jww (2008-05-13): Need to parse datetime, lists, and people
-	    eval ("issue.set_%s(\"%s\")" % (args[1], args[2]))
+            # jww (2008-05-13): Need to parse datetime, lists, and people
+            method = getattr(issue, "set_" + args[1])
+            method(args[2])
+
+######################################################################
+    elif command == "edit":
+        if len(args) == 0:
+            print "Usage: %s edit <issue-id> <field>" % sys.argv[0]
+            sys.exit(1)
+        else:
+            issue = issueSet[args[0]]
+            if len(args) != 2:
+              print "Usage: %s edit <issue-id> <field>" % sys.argv[0]
+              sys.exit(1)
+            if not sys.stdin.isatty():
+              contents = sys.stdin.read()
+            else:
+              contents = inputFromEditor(getattr(issue, args[1]))
+            getattr(issue, "set_"+args[1])(contents)
+
+######################################################################
+
+    elif command == "close":
+        if len(args) == 0:
+            print "Usage: %s close <issue-id>" % basename(sys.argv[0])
+            sys.exit(1)
+        issue = issueSet[args[0]]
+        issue.set_status("closed")
 
 ######################################################################
 
     elif command == "new":
         if len(args) == 0:
-            print "Usage: %s title" % sys.argv[0]
-	else:
+            print "Usage: %s new <title>" % sys.argv[0]
+        else:
             issue = issueSet.new_issue(args[0])
+            if options.status:
+                issue.set_status(options.status)
+            else:
+                issue.set_status("TODO")
+            
+            if options.printNewBugs:
+                print "%s: %s (%s)" % (issue.status, issue.title, issue.name[0:7])
+    elif command == "comment":
+        if len(args) == 0:
+            print "Usage: %s comment <issue-id> <comment-title>" % sys.argv[0]
+            sys.exit(1)
+        issue = issueSet[args[0]]
+        comment = issueSet.new_comment(issue, args[1])
+        if options.printNewBugs:
+            print "### Comment(%s): %s" % (comment.name[0:7], comment.comment)
 
 ######################################################################
-
+    else:
+        print "Unknown command %s" % command
     # If any of the commands made the issueSet dirty, (possibly) update the
     # repository and write out a new cache
 
