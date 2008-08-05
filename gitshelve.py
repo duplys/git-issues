@@ -171,7 +171,7 @@ class gitshelve(dict):
     This implementation uses a dictionary of gitbook objects, since we don't
     really want to use Pickling within a Git repository (it's not friendly to
     other Git users, nor does it support merging)."""
-    ls_tree_pat = re.compile('(040000 tree|100644 blob) ([0-9a-f]{40})\t(start|(.+))$')
+    ls_tree_pat = re.compile('((\d{6}) (tree|blob)) ([0-9a-f]{40})\t(start|(.+))$')
 
     head    = None
     dirty   = False
@@ -226,8 +226,9 @@ class gitshelve(dict):
             assert match
 
             treep = match.group(1) == "040000 tree"
-            name  = match.group(2)
-            path  = match.group(3)
+            perm  = match.group(2)
+            name  = match.group(4)
+            path  = match.group(5)
 
             parts = split(path, os.sep)
             d     = self.objects
@@ -237,9 +238,17 @@ class gitshelve(dict):
                 d = d[part]
 
             if treep:
-                d['__root__'] = name
+                if perm == '040000' :
+                    d['__root__'] = name
+                else :
+                    raise GitError('read_repository', [], {},
+                                   'Invalid mode for %s : 040000 required, %s found' %(path, perm))
             else:
-                d['__book__'] = self.book_type(self, path, name)
+                if perm == '100644' :
+                    d['__book__'] = self.book_type(self, path, name)
+                else :
+                    raise GitError('read_repository', [], {},
+                                   'Invalid mode for %s : 100644 required, %s found' %(path, perm))
 
     def open(cls, branch = 'master', repository = None,
              keep_history = True, book_type = gitbook):
