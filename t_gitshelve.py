@@ -59,10 +59,10 @@ class t_gitshelve(unittest.TestCase):
         text = "Hello, this is a test\n"
         shelf['foo/bar/baz.c'] = text
 
-        buffer = StringIO()
-        shelf.dump_objects(buffer)
+        buf = StringIO()
+        shelf.dump_objects(buf)
 
-        self.assertEqual(buffer.getvalue(), """tree: foo
+        self.assertEqual(buf.getvalue(), """tree: foo
   tree: bar
     blob: baz.c
 """)
@@ -71,14 +71,14 @@ class t_gitshelve(unittest.TestCase):
         hash2 = shelf.commit('second\n')
         self.assertEqual(hash1, hash2)
 
-        buffer = StringIO()
-        shelf.dump_objects(buffer)
+        buf = StringIO()
+        shelf.dump_objects(buf)
 
         self.assertEqual("""tree ca37be3e31987d8ece35001301c0b8f1fccbb888
   tree 95b790693f3b5934c63d10b8b007e4758f6134a9: foo
     tree c03cdd65fa74c272bed2e9a48e3ed19402576e19: bar
       blob ea93d5cc5f34e13d2a55a5866b75e2c58993d253: baz.c
-""", buffer.getvalue())
+""", buf.getvalue())
 
         hash3 = shelf.current_head()
         self.assertEqual(hash1, hash3)
@@ -98,7 +98,7 @@ class t_gitshelve(unittest.TestCase):
   tree 95b790693f3b5934c63d10b8b007e4758f6134a9: foo
     tree c03cdd65fa74c272bed2e9a48e3ed19402576e19: bar
       blob ea93d5cc5f34e13d2a55a5866b75e2c58993d253: baz.c
-""", buffer.getvalue())
+""", buf.getvalue())
 
         self.assertEqual(text, shelf['foo/bar/baz.c'])
         del shelf
@@ -110,15 +110,15 @@ class t_gitshelve(unittest.TestCase):
         shelf['alpha/beta/baz2.c'] = text
         shelf['apple/orange/baz3.c'] = text
 
-        buffer = StringIO()
+        buf = StringIO()
         keys = shelf.keys()
         keys.sort()
         for path in keys:
-            buffer.write("path: (%s)\n" % path)
+            buf.write("path: (%s)\n" % path)
         self.assertEqual("""path: (alpha/beta/baz2.c)
 path: (apple/orange/baz3.c)
 path: (foo/bar/baz1.c)
-""", buffer.getvalue())
+""", buf.getvalue())
 
     def testVersioning(self):
         shelf = gitshelve.open('test')
@@ -126,39 +126,39 @@ path: (foo/bar/baz1.c)
         shelf['foo/bar/baz1.c'] = text
         shelf.sync()
 
-        buffer = StringIO()
-        shelf.dump_objects(buffer)
+        buf = StringIO()
+        shelf.dump_objects(buf)
         self.assertEqual("""tree 073629aeb0ef56a50a6cfcaf56da9b8393604b56
   tree ce9d91f2da4ab3aa920cd5763be48b9aef76f999: foo
     tree 2e626f2ae629ea77618e84e79e1bfae1c473452e: bar
       blob ea93d5cc5f34e13d2a55a5866b75e2c58993d253: baz1.c
-""", buffer.getvalue())
+""", buf.getvalue())
 
         text = "Hello, this is a change\n"
         shelf['foo/bar/baz1.c'] = text
         shelf['foo/bar/baz2.c'] = text
         shelf.sync()
 
-        buffer = StringIO()
-        shelf.dump_objects(buffer)
+        buf = StringIO()
+        shelf.dump_objects(buf)
         self.assertEqual("""tree c7c6fd4368460c645d0953349d5577d32f46115a
   tree 3936ea8daffe9eef0451b43205d6530374f8ffa3: foo
     tree 8f7bfca3bc33c93fb1a878bc79c2bb93d8f41730: bar
       blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz1.c
       blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz2.c
-""", buffer.getvalue())
+""", buf.getvalue())
 
         del shelf
 
         shelf = gitshelve.open('test')
 
-        buffer = StringIO()
-        shelf.dump_objects(buffer)
+        buf = StringIO()
+        shelf.dump_objects(buf)
         self.assertEqual("""tree 3936ea8daffe9eef0451b43205d6530374f8ffa3: foo
   tree 8f7bfca3bc33c93fb1a878bc79c2bb93d8f41730: bar
     blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz1.c
     blob fb54a7573d864d4b57ffcc8af37e7565e2ba4608: baz2.c
-""", buffer.getvalue())
+""", buf.getvalue())
 
         self.assertEqual(text, shelf['foo/bar/baz1.c'])
         self.assertEqual(text, shelf['foo/bar/baz2.c'])
@@ -200,6 +200,42 @@ Date:   .+
             if os.path.isdir('/tmp/repo-test'):
                 shutil.rmtree('/tmp/repo-test')
 
+    def testBlobStore(self):
+        """Test use a gitshelve as a generic blob store."""
+        try:
+            shelf = gitshelve.open(repository = '/tmp/blobs', keep_history = False)
+            text = "This is just some sample text.\n"
+            hash = shelf.put(text)
+
+            buf = StringIO()
+            shelf.dump_objects(buf)
+            self.assertEqual("""tree: ac
+  blob acd291ce81136338a729a30569da2034d918e057: d291ce81136338a729a30569da2034d918e057
+""", buf.getvalue())
+
+            self.assertEqual(text, shelf.get(hash))
+
+            shelf.sync()
+            buf = StringIO()
+            shelf.dump_objects(buf)
+            self.assertEqual("""tree 127093ef9a92ebb1f49caa5ecee9ff7139db3a6c
+  tree 6c6167149ccc5bf60892b65b84322c1943f5f7da: ac
+    blob acd291ce81136338a729a30569da2034d918e057: d291ce81136338a729a30569da2034d918e057
+""", buf.getvalue())
+            del shelf
+
+            shelf = gitshelve.open(repository = '/tmp/blobs', keep_history = False)
+            buf = StringIO()
+            shelf.dump_objects(buf)
+            self.assertEqual("""tree 6c6167149ccc5bf60892b65b84322c1943f5f7da: ac
+  blob acd291ce81136338a729a30569da2034d918e057: d291ce81136338a729a30569da2034d918e057
+""", buf.getvalue())
+
+            self.assertEqual(text, shelf.get(hash))
+            del shelf
+        finally:
+            if os.path.isdir('/tmp/blobs'):
+                shutil.rmtree('/tmp/blobs')
 
 def suite():
     return unittest.TestLoader().loadTestsFromTestCase(t_gitshelve)
