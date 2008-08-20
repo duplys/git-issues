@@ -1028,8 +1028,11 @@ if __name__ == '__main__':
         copy(join(dirname(__file__), "t_gitshelve.py"), issuesdir)
         copy(join(dirname(__file__), "README"), issuesdir)
         copy(join(dirname(__file__), "LICENSE"), issuesdir)
-        
-    if command == "list":
+        sys.exit(0)
+
+######################################################################
+
+    elif command == "list":
         header = "   #    Id     Title%sState  Date  Assign  Tags"
         width = int(options.screenWidth)
         titleWidth = width - len(header) + 2
@@ -1038,7 +1041,7 @@ if __name__ == '__main__':
 
         index = 1
         filteredStati = options.filterStatus.split(":")
-        
+
         for item in issueSet.shelf.iteritems():
             if "comment" in item[0]:
                 continue
@@ -1053,7 +1056,7 @@ if __name__ == '__main__':
             index += 1
 
         print
-        
+
 ######################################################################
 
     elif command == "show" or command == "dump":
@@ -1122,6 +1125,7 @@ if __name__ == '__main__':
             method(args[2])
 
 ######################################################################
+
     elif command == "edit":
         if len(args) == 0:
             print "Usage: %s edit <issue-id> <field>" % sys.argv[0]
@@ -1157,7 +1161,7 @@ if __name__ == '__main__':
                 issue.set_status(options.status)
             else:
                 issue.set_status("TODO")
-            
+
             if options.printNewBugs:
                 print "%s: %s (%s)" % (issue.status, issue.title, issue.name[0:7])
     elif command == "comment":
@@ -1170,6 +1174,7 @@ if __name__ == '__main__':
             print "### Comment(%s): %s" % (comment.name[0:7], comment.comment)
 
 ######################################################################
+
     else:
         print "Unknown command %s" % command
     # If any of the commands made the issueSet dirty, (possibly) update the
