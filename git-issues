@@ -11,25 +11,31 @@
 # 2. use -z flag for ls-tree
 # 3. use UTC throughout
 
+import platform
+
 from os.path import split, join, exists, dirname
-from os import getcwd, makedirs, execv, readlink
+from os import getcwd, makedirs, execv
 from shutil import copy
 from sys import argv
 
-try:
-    resolvedLink = readlink(__file__)
-except:
+if platform.system() == "Windows":
     resolvedLink = None
+else:
+    from os import readlink
+    try:
+        resolvedLink = readlink(__file__)
+    except:
+        resolvedLink = None
 
-if resolvedLink and resolvedLink[0] != "/":
-    resolvedLink = join(dirname(__file__), resolvedLink)
-if resolvedLink:
-    #print "Symlink found, using %s instead" % resolvedLink
-    execv(resolvedLink, [resolvedLink] + argv[1:])
+    if resolvedLink and resolvedLink[0] != "/":
+        resolvedLink = join(dirname(__file__), resolvedLink)
+    if resolvedLink:
+        #print "Symlink found, using %s instead" % resolvedLink
+        execv(resolvedLink, [resolvedLink] + argv[1:])
 
 path = getcwd()
 
-if ".gitissues" not in __file__: 
+if ".gitissues" not in __file__:
     while not exists(join(path,".gitissues")):
         path,extra = split(path)
         if not extra:
@@ -40,7 +46,6 @@ if ".gitissues" not in __file__:
         execv(issuesExec, [issuesExec]+ argv[1:])
         assert ("This should never be called" and False)
 
-import platform
 import sys
 import os
 import re
