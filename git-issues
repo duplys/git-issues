@@ -1122,8 +1122,12 @@ if __name__ == '__main__':
 
             # jww (2008-05-13): Need to parse datetime, lists, and people
             method = getattr(issue, "set_" + args[1])
-            method(args[2])
-
+            try:
+              method(args[2])
+            except IndexError,e:
+              print "Index error."
+              print args
+              sys.exit(1)
 ######################################################################
 
     elif command == "edit":
