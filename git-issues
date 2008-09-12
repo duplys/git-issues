@@ -948,6 +948,12 @@ parser.add_option("--filter-status",
                   help = """does not print a bug if it is in one of 
 the stati specified (column separated) by this option.""".replace("\n",""))
 
+parser.add_option("--filter-tags",
+                  dest="filterTags",
+                  default="",
+                  help = """Prints only the issues with one of the following
+tags (column separated) associated to it.""")
+
 parser.add_option("--screen-width",
                   dest="screenWidth",
                   default=terminal_width(),
@@ -1041,12 +1047,19 @@ if __name__ == '__main__':
 
         index = 1
         filteredStati = options.filterStatus.split(":")
+        wantedTags = dict([(tag,1) for tag in options.filterTags.split(":") if tag])
 
         for item in issueSet.shelf.iteritems():
             if "comment" in item[0]:
                 continue
             issue = item[1].get_data()
             if issue.status in filteredStati:
+                continue
+            if wantedTags and not issue.tags:
+              continue
+            if wantedTags:
+              matchingTags = [tag for tag in issue.tags.split(", ") if wantedTags.has_key(tag)]
+              if not matchingTags:
                 continue
             formatString = "%4d  %s  %-" + str(titleWidth+len("Title")-1) + "s %-6s %5s %6s %s"
             print formatString % \
