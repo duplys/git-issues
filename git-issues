@@ -945,7 +945,7 @@ parser.add_option("--print-new-bugs",
 parser.add_option("--filter-status",
                   dest="filterStatus",
                   default="closed",
-                  help = """does not print a bug if it is in one of 
+                  help = """do not print a issue if it is in one of 
 the stati specified (column separated) by this option.""".replace("\n",""))
 
 parser.add_option("--filter-tags",
