@@ -97,6 +97,14 @@ def git(cmd, *args, **kwargs):
                 if proc.wait() != 0:
                     raise GitError('init', [], {}, proc.stderr.read())
 
+        if 'worktree' in kwargs:
+            if environ is None:
+                environ = os.environ.copy()
+            environ['GIT_WORK_TREE'] = kwargs['worktree']
+            work_tree = environ['GIT_WORK_TREE']
+            if not os.path.isdir(work_tree):
+                os.makedirs(work_tree)
+
         proc = Popen(('git', cmd) + args, env = environ,
                      stdin  = stdin_mode,
                      stdout = PIPE,
