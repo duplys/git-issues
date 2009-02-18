@@ -444,8 +444,14 @@ class gitshelve(dict):
 
     def prune_tree(self, objects, paths):
         if len(paths) > 1:
-            self.prune_tree(objects[paths[0]], paths[1:])
+            left = self.prune_tree(objects[paths[0]], paths[1:])
+            # do not delete if there's something left besides __root__ and
+            # paths[0]
+            if left > 1 or len(objects[paths[0]]) > 2:
+                return 3
+        l = len(objects[paths[0]])
         del objects[paths[0]]
+        return l-1
 
     def __delitem__(self, path):
         try:
