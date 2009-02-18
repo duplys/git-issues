@@ -116,7 +116,8 @@ def git(cmd, *args, **kwargs):
 
         returncode = proc.wait()
         restart = False
-        if returncode != 0:
+        ignore_errors = 'ignore_errors' in kwargs and kwargs['ignore_errors']
+        if returncode != 0 and not ignore_errors:
             if kwargs.has_key('restart'):
                 if kwargs['restart'](cmd, args, kwargs):
                     restart = True
