@@ -140,6 +140,9 @@ class gitbook:
         self.data  = None
         self.dirty = False
 
+    def __repr__(self):
+        return '<gitshelve.gitbook %s %s %s>'%(self.path, self.name, self.dirty)
+
     def get_data(self):
         if self.data is None:
             assert self.name is not None
