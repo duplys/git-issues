@@ -212,7 +212,10 @@ class gitshelve(dict):
         return apply(git, args, kwargs)
 
     def current_head(self):
-        return self.git('rev-parse', self.branch)
+        x = self.git('rev-parse', self.branch)
+        if len(x) != 40:
+            raise ValueError("rev-parse went insane: %s"%x)
+        return x
 
     def update_head(self, new_head):
         if self.head:
