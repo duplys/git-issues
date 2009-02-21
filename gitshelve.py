@@ -362,6 +362,10 @@ class gitshelve(dict):
     def sync(self):
         self.commit()
 
+    def get_parent_ids(self):
+        r = self.git('rev-list', '--parents', '--max-count=1', self.branch)
+        return r.split()[1:]
+
     def close(self):
         if self.dirty:
             self.sync()
