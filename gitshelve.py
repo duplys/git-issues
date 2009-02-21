@@ -111,24 +111,27 @@ def git(cmd, *args, **kwargs):
                      stderr = PIPE)
 
         if kwargs.has_key('input'):
-            proc.stdin.write(kwargs['input'])
-            proc.stdin.close()
+            input = kwargs['input']
+        else:
+            input = ''
+       
+        out, err = proc.communicate(input) 
 
-        returncode = proc.wait()
+        returncode = proc.returncode
         restart = False
         ignore_errors = 'ignore_errors' in kwargs and kwargs['ignore_errors']
-        if returncode != 0 and not ignore_errors:
+        if returncode != 0:
             if kwargs.has_key('restart'):
                 if kwargs['restart'](cmd, args, kwargs):
                     restart = True
-            else:
-                raise GitError(cmd, args, kwargs, proc.stderr.read())
+            elif not ignore_errors:
+                raise GitError(cmd, args, kwargs, err)
 
     if not kwargs.has_key('ignore_output'):
         if kwargs.has_key('keep_newline'):
-            return proc.stdout.read()
+            return out
         else:
-            return proc.stdout.read()[:-1]
+            return out[:-1]
 
 
 class gitbook:
