@@ -1155,8 +1155,9 @@ if __name__ == '__main__':
             if not sys.stdin.isatty():
               contents = sys.stdin.read()
             else:
-              contents = inputFromEditor(getattr(issue, args[1]))
-            getattr(issue, "set_"+args[1])(contents)
+              cmd = args[1].lower()
+              contents = inputFromEditor(getattr(issue, cmd))
+            getattr(issue, "set_"+cmd)(contents)
 
 ######################################################################
 
