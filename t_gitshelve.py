@@ -3,6 +3,7 @@
 import sys
 import re
 import os
+import os.path
 import shutil
 import unittest
 import gitshelve
@@ -15,6 +16,10 @@ except:
 
 class t_gitshelve(unittest.TestCase):
     def setUp(self):
+        if os.name == 'nt':
+            self.tmpdir = os.getenv('TEMP')
+        else:
+            self.tmpdir = '/tmp'
         try: gitshelve.git('branch', '-D', 'test')
         except: pass
 
@@ -175,35 +180,40 @@ Date:   .+
 """, log))
 
     def testDetachedRepo(self):
-        shelf = gitshelve.open(repository = '/tmp/repo-test')
+        repotest = os.path.join(self.tmpdir, 'repo-test')
+        repotestclone = os.path.join(self.tmpdir, 'repo-test-clone')
+        shelf = gitshelve.open(repository = repotest)
         text = "Hello, world!\n"
         shelf['foo.txt'] = text
 
         try:
             shelf.sync()
 
-            gitshelve.git('clone', '/tmp/repo-test', '/tmp/repo-test-clone')
+            gitshelve.git('clone', repotest, repotestclone)
+
+            clonedfoo = os.path.join(repotestclone, 'foo.txt')
 
             try:
-                self.assert_(os.path.isfile('/tmp/repo-test-clone/foo.txt'))
+                self.assert_(os.path.isfile(clonedfoo))
 
-                data = open('/tmp/repo-test-clone/foo.txt')
+                data = open(clonedfoo)
                 try:
                     self.assertEqual(text, data.read())
                 finally:
                     data.close()
             finally:
-                if os.path.isdir('/tmp/repo-test-clone'):
-                    shutil.rmtree('/tmp/repo-test-clone')
+                if os.path.isdir(repotestclone):
+                    shutil.rmtree(repotestclone)
         finally:
             del shelf
-            if os.path.isdir('/tmp/repo-test'):
-                shutil.rmtree('/tmp/repo-test')
+            if os.path.isdir(repotest):
+                shutil.rmtree(repotest)
 
     def testBlobStore(self):
         """Test use a gitshelve as a generic blob store."""
         try:
-            shelf = gitshelve.open(repository = '/tmp/blobs', keep_history = False)
+            blobpath = os.path.join(self.tmpdir, 'blobs')
+            shelf = gitshelve.open(repository = blobpath, keep_history = False)
             text = "This is just some sample text.\n"
             hash = shelf.put(text)
 
@@ -224,7 +234,7 @@ Date:   .+
 """, buf.getvalue())
             del shelf
 
-            shelf = gitshelve.open(repository = '/tmp/blobs', keep_history = False)
+            shelf = gitshelve.open(repository = blobpath, keep_history = False)
             buf = StringIO()
             shelf.dump_objects(buf)
             self.assertEqual("""tree 6c6167149ccc5bf60892b65b84322c1943f5f7da: ac
@@ -234,8 +244,8 @@ Date:   .+
             self.assertEqual(text, shelf.get(hash))
             del shelf
         finally:
-            if os.path.isdir('/tmp/blobs'):
-                shutil.rmtree('/tmp/blobs')
+            if os.path.isdir(blobpath):
+                shutil.rmtree(blobpath)
 
 def suite():
     return unittest.TestLoader().loadTestsFromTestCase(t_gitshelve)
