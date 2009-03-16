@@ -53,33 +53,33 @@ into a higher-level script.
 
 Here's some of the data this file tracks:
 
- - Title
- - Summary
- - Description
- - Author: Who wrote the actual issue record
- - Reporter: Who reported this issue
- - Owner: Who is responsible for closure
- - Assigned: Who is it presently assigned to
- - Cc: Who else wants to know about it
- - Status: new, open, pending, deferred, closed
- - Resolution: fixed, wontfix, dup
- - Type: defect, feature, docs
- - Component
- - Version
- - Milestone
- - Severity: blocker, critical, major, minor, cosmetic
- - Priority: high, med, low
- - Tags
+- Title
+- Summary
+- Description
+- Author: Who wrote the actual issue record
+- Reporter: Who reported this issue
+- Owner: Who is responsible for closure
+- Assigned: Who is it presently assigned to
+- Cc: Who else wants to know about it
+- Status: new, open, pending, deferred, closed
+- Resolution: fixed, wontfix, dup
+- Type: defect, feature, docs
+- Component
+- Version
+- Milestone
+- Severity: blocker, critical, major, minor, cosmetic
+- Priority: high, med, low
+- Tags
 
 h2. @comment_[ISO_TIMESTAMP]_[HASH].xml@
 
 A comment is a note attached to an issue.  This XML file records:
 
- - When the comment was created
- - When the comment was last edited
- - The author of the comment
- - The text of the comment itself
- - Any attachments associated with the comment.
+- When the comment was created
+- When the comment was last edited
+- The author of the comment
+- The text of the comment itself
+- Any attachments associated with the comment.
 
 h2. filename
 
@@ -94,14 +94,14 @@ Also, at the top-level of the @issues@ branch is a file which contains
 information relating to the whole project.  The file is named @project.xml@
 and contains the following information.
 
- - Statuses
- - Resolutions
- - Types
- - Components
- - Versions
- - Milestones
- - Severities
- - Priorities
+- Statuses
+- Resolutions
+- Types
+- Components
+- Versions
+- Milestones
+- Severities
+- Priorities
 
 Each of these identifies a legal set of values for the given field.  Only the
 "Tags" field is freely assignable to any value; all other fields must match
