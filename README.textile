@@ -36,7 +36,7 @@ changes.
 In each each uniquely named issue directory may be found one or more files of
 the following form:
 
-## @issue.xml@
+h2. @issue.xml@
 
 The data file changes throughout the history of an issue, even though the
 object name for the issue (it's 40-byte hash) is always used from the time of
@@ -71,7 +71,7 @@ Here's some of the data this file tracks:
  - Priority: high, med, low
  - Tags
 
-## @comment_[ISO_TIMESTAMP]_[HASH].xml@
+h2. @comment_[ISO_TIMESTAMP]_[HASH].xml@
 
 A comment is a note attached to an issue.  This XML file records:
 
@@ -81,14 +81,14 @@ A comment is a note attached to an issue.  This XML file records:
  - The text of the comment itself
  - Any attachments associated with the comment.
 
-## filename
+h2. filename
 
 An attachment is a text or binary file which has been linked to an issue.
 It's name is the same as the filename it's created under.  There must always
 be one or more comments that refer to the attachment, otherwise the system is
 free to delete it.
 
-## Top-level @project.xml@ file
+h2. Top-level @project.xml@ file
 
 Also, at the top-level of the @issues@ branch is a file which contains
 information relating to the whole project.  The file is named @project.xml@
