@@ -13,43 +13,16 @@
 
 import platform
 
-from os.path import split, join, exists, dirname
-from os import getcwd, makedirs, execv
+import os
+import os.path
 from shutil import copy
 from sys import argv
-
-if platform.system() == "Windows":
-    resolvedLink = None
-else:
-    from os import readlink
-    try:
-        resolvedLink = readlink(__file__)
-    except:
-        resolvedLink = None
-
-    if resolvedLink and resolvedLink[0] != "/":
-        resolvedLink = join(dirname(__file__), resolvedLink)
-    if resolvedLink:
-        #print "Symlink found, using %s instead" % resolvedLink
-        execv(resolvedLink, [resolvedLink] + argv[1:])
-
-path = getcwd()
-
-if ".gitissues" not in __file__:
-    while not exists(join(path,".gitissues")):
-        path,extra = split(path)
-        if not extra:
-            break
-    issuesExec = join(path,".gitissues/git-issues")
-    if exists(issuesExec):
-        #print "git-issues found in %s. Using it in place of the one in %s" % (issuesExec, __file__)
-        execv(issuesExec, [issuesExec]+ argv[1:])
-        assert ("This should never be called" and False)
-
 import sys
-import os
 import re
 import optparse
+import tempfile
+import cPickle
+import datetime
 
 import gitshelve
 
@@ -58,19 +31,44 @@ try:
 except:
     from StringIO import StringIO
 
-import cPickle
 
-from datetime   import datetime
-from subprocess import Popen, PIPE
-from os.path    import isdir, isfile, join, basename
-from tempfile   import mkstemp
+if platform.system() == "Windows":
+    resolvedLink = None
+else:
+    from os import readlink
+    if os.path.islink(__file__):
+        resolvedLink = readlink(__file__)
+    else:
+        resolvedLink = None
+
+    if resolvedLink and resolvedLink[0] != "/":
+        resolvedLink = os.path.join(os.path.dirname(__file__), resolvedLink)
+    if resolvedLink:
+        #print "Symlink found, using %s instead" % resolvedLink
+        os.execv(resolvedLink, [resolvedLink] + argv[1:])
+
+path = os.getcwd()
+
+if ".gitissues" not in __file__:
+    while not os.path.exists(os.path.join(path, ".gitissues")):
+        path, extra = os.path.split(path)
+        if not extra:
+            break
+    issuesExec = os.path.join(path, ".gitissues/git-issues")
+    if os.path.exists(issuesExec):
+        #print "git-issues found in %s. Using it in place of the one in %s"
+        #   % (issuesExec, __file__)
+        os.execv(issuesExec, [issuesExec] + argv[1:])
+        assert ("This should never be called" and False)
+
 ######################################################################
 
-iso_fmt       = "%Y%m%dT%H%M%S"
-options       = None
+iso_fmt = "%Y%m%dT%H%M%S"
+options = None
 cache_version = 11
 
 ######################################################################
+
 
 # You may wonder what dirtiness means below.  Here's the deal:
 #
@@ -79,96 +77,97 @@ cache_version = 11
 # but possibly not itself.  Any dirtiness is cause for rewriting the object
 # cache; only self-dirtiness of specific objects will cause the repository to
 # be updated.
-
 class Person:
     def __init__(self, name, email):
-        self.name  = name
+        self.name = name
         self.email = email
 
     def __str__(self):
         return "%s <%s>" % (self.name, self.email)
 
+
 class Comment:
     def __init__(self, issue, author, comment):
-        self.name        = None
-        self.issue       = issue
-        self.author      = author
-        self.comment     = comment
-        self.created     = datetime.now()
-        self.modified    = None
-        self.self_dirty  = True
+        self.name = None
+        self.issue = issue
+        self.author = author
+        self.comment = comment
+        self.created = datetime.datetime.now()
+        self.modified = None
+        self.self_dirty = True
         self.attachments = []   # records filename and blob
-        self.issue.comments[self.get_name()] = self # register into issue
+        self.issue.comments[self.get_name()] = self  # register into issue
 
     def mark_dirty(self):
-        self.modified   = datetime.now()
+        self.modified = datetime.datetime.now()
         self.self_dirty = True
-        self.issue.mark_dirty(self_dirty = False)
+        self.issue.mark_dirty(self_dirty=False)
 
     def __getstate__(self):
-        odict = self.__dict__.copy() # copy the dict since we change it
-        del odict['self_dirty']      # remove self dirty flag
+        odict = self.__dict__.copy()  # copy the dict since we change it
+        del odict['self_dirty']       # remove self dirty flag
         return odict
 
     def __setstate__(self, dict):
-        self.__dict__.update(dict)   # update attributes
+        self.__dict__.update(dict)    # update attributes
         self.self_dirty = False
+
 
 class Issue:
     def __init__(self, issueSet, author, title,
-                 summary     = None,
-                 description = None,
-                 reporters   = [],
-                 owners      = [],
-                 assigned    = None,
-                 carbons     = [],
-                 status      = "new",
-                 resolution  = None,
-                 issue_type  = "defect",
-                 components  = [],
-                 version     = None,
-                 milestone   = None,
-                 severity    = "major",
-                 priority    = "medium",
-                 tags        = []):
-        self.issueSet    = issueSet
-        self.name        = None
-        self.author      = author
-        self.title       = title
-        self.summary     = summary
+                 summary=None,
+                 description=None,
+                 reporters=[],
+                 owners=[],
+                 assigned=None,
+                 carbons=[],
+                 status="new",
+                 resolution=None,
+                 issue_type="defect",
+                 components=[],
+                 version=None,
+                 milestone=None,
+                 severity="major",
+                 priority="medium",
+                 tags=[]):
+        self.issueSet = issueSet
+        self.name = None
+        self.author = author
+        self.title = title
+        self.summary = summary
         self.description = description
-        self.reporters   = reporters
-        self.owners      = owners
-        self.assigned    = assigned
-        self.carbons     = carbons
-        self.status      = status
-        self.resolution  = resolution
-        self.issue_type  = issue_type
-        self.components  = components
-        self.version     = version
-        self.milestone   = milestone
-        self.severity    = severity
-        self.priority    = priority
-        self.tags        = tags
-        self.created     = datetime.now()
-        self.modified    = None
-        self.changes     = {}
-        self.dirty       = False
-        self.self_dirty  = True
-        self.comments    = {}
+        self.reporters = reporters
+        self.owners = owners
+        self.assigned = assigned
+        self.carbons = carbons
+        self.status = status
+        self.resolution = resolution
+        self.issue_type = issue_type
+        self.components = components
+        self.version = version
+        self.milestone = milestone
+        self.severity = severity
+        self.priority = priority
+        self.tags = tags
+        self.created = datetime.datetime.now()
+        self.modified = None
+        self.changes = {}
+        self.dirty = False
+        self.self_dirty = True
+        self.comments = {}
 
     def mark_dirty(self, self_dirty):
         self.dirty = True
         if self_dirty:
             self.self_dirty = True
-            self.modified   = datetime.now()
-        self.issueSet.mark_dirty(self_dirty = False)
+            self.modified = datetime.datetime.now()
+        self.issueSet.mark_dirty(self_dirty=False)
 
     def get_name(self):
         assert False
 
     def note_change(self, field, before, after):
-        if self.changes.has_key(field):
+        if field in self.changes:
             data = self.changes[field]
             data[1] = after
         else:
@@ -244,17 +243,18 @@ class Issue:
         self.tags = tags
 
     def __getstate__(self):
-        odict = self.__dict__.copy() # copy the dict since we change it
-        del odict['changes']         # remove change log
-        del odict['dirty']           # remove dirty flag
-        del odict['self_dirty']      # remove self dirty flag
+        odict = self.__dict__.copy()  # copy the dict since we change it
+        del odict['changes']          # remove change log
+        del odict['dirty']            # remove dirty flag
+        del odict['self_dirty']       # remove self dirty flag
         return odict
 
-    def __setstate__(self,dict):
-        self.__dict__.update(dict)   # update attributes
+    def __setstate__(self, dict):
+        self.__dict__.update(dict)    # update attributes
         self.changes = {}
-        self.dirty      = False
+        self.dirty = False
         self.self_dirty = False
+
 
 class IssueSet:
     """An IssueSet refers to a group of issues.  There is always at least one
@@ -266,25 +266,25 @@ class IssueSet:
     their unique identifier, and also certain global definition, like the
     allowable components, etc."""
     def __init__(self, shelf):
-        self.shelf         = shelf
-        self.statuses      = []
-        self.resolutions   = []
-        self.issue_types   = []
-        self.components    = []
-        self.versions      = []
-        self.milestones    = []
-        self.severities    = []
-        self.priorities    = []
-        self.dirty         = False
-        self.self_dirty    = True
+        self.shelf = shelf
+        self.statuses = []
+        self.resolutions = []
+        self.issue_types = []
+        self.components = []
+        self.versions = []
+        self.milestones = []
+        self.severities = []
+        self.priorities = []
+        self.dirty = False
+        self.self_dirty = True
         self.cache_version = cache_version
-        self.created       = datetime.now()
-        self.modified      = None
+        self.created = datetime.datetime.now()
+        self.modified = None
 
     def mark_dirty(self, self_dirty):
         self.dirty = True
         if self_dirty:
-            self.modified   = datetime.now()
+            self.modified = datetime.datetime.now()
             self.self_dirty = True
 
     def current_author(self):
@@ -305,22 +305,23 @@ class IssueSet:
 
     def comment_path(self, comment):
         name = comment.issue.get_name()
-        return "%s/%s/comment_%s_%s_%s.xml" %(name[:2], 
-                                           name[2:], 
+        return "%s/%s/comment_%s_%s_%s.xml" % (name[:2],
+                                           name[2:],
                                            comment.name,
-                                           datetime.now().isoformat(),
+                                           datetime.datetime.now().isoformat(),
                                            comment.comment)
+
     def issue_path(self, issue):
         name = issue.get_name()
         return '%s/%s/issue.xml' % (name[:2], name[2:])
 
     def add_issue(self, issue):
         self.shelf[self.issue_path(issue)] = issue
-        self.mark_dirty(self_dirty = False)
+        self.mark_dirty(self_dirty=False)
 
     def add_comment(self, comment):
         self.shelf[self.comment_path(comment)] = comment
-        self.mark_dirty(self_dirty = False)
+        self.mark_dirty(self_dirty=False)
 
     def get_comment(self, idx_or_partial_hash):
         comment = None
@@ -329,6 +330,7 @@ class IssueSet:
             comment = self.shelf[self.shelf.keys()[idx]]
         except:
             print [key for key in self.shelf.iterkeys()]
+
             def getCommentId(x):
                 if not 'comment_' in x:
                     return ""
@@ -337,7 +339,8 @@ class IssueSet:
                 return x
             clean = lambda x: getCommentId(x)
             matching = [(clean(key), key) for key in self.shelf.iterkeys()
-                        if clean(key).startswith(idx_or_partial_hash) and not "issue.xml" in clean(key)]
+                        if clean(key).startswith(idx_or_partial_hash) and \
+                                        not "issue.xml" in clean(key)]
             if len(matching) == 0:
                 pass
             elif len(matching) == 1:
@@ -349,16 +352,17 @@ class IssueSet:
             raise Exception("There is no issue matching the identifier '%s'.\n" %
                             idx_or_partial_hash)
         return comment
-            
+
     def __getitem__(self, idx_or_partial_hash):
         issue = None
         try:
             idx = int(idx_or_partial_hash) - 1
             issue = self.shelf[self.shelf.keys()[idx]]
         except:
-            clean = lambda x: x.replace('issue.xml', '').replace('/','')
+            clean = lambda x: x.replace('issue.xml', '').replace('/', '')
             matching = [(clean(key), key) for key in self.shelf.iterkeys()
-                        if clean(key).startswith(idx_or_partial_hash) and not "comment" in clean(key)]
+                        if clean(key).startswith(idx_or_partial_hash) and
+                                not "comment" in clean(key)]
             if len(matching) == 0:
                 pass
             elif len(matching) == 1:
@@ -379,7 +383,7 @@ class IssueSet:
 
     def issues_cache_file(self):
         assert False
-    
+
     def load_state(self):
         """Given a newly created IssueSet object as a template, see if we can
         restore the cached version of the data from disk, and then check whether
@@ -397,7 +401,7 @@ class IssueSet:
               issueSet = issueSet.load_state()
               ... use the issue data ..."""
         cache_file = self.issues_cache_file()
-        if isfile(cache_file):
+        if os.path.isfile(cache_file):
             fd = open(cache_file, 'rb')
             if options.verbose:
                 print "Cache: Loading saved issues data"
@@ -427,13 +431,13 @@ class IssueSet:
         iteration.  This is only done if there are actual changes to write."""
         if not self.dirty:
             return
-        
+
         self.shelf.sync()
 
-        cache_file     = self.issues_cache_file()
+        cache_file = self.issues_cache_file()
         cache_file_dir = os.path.dirname(cache_file)
 
-        if not isdir(cache_file_dir):
+        if not os.path.isdir(cache_file_dir):
             os.makedirs(cache_file_dir)
 
         fd = open(cache_file, 'wb')
@@ -448,11 +452,14 @@ class IssueSet:
 
 import xml.dom.minidom
 
+
 def read_object(obj, file_descriptor):
     return XmlReader.read(file_descriptor)
 
+
 def object_from_string(str):
     return XmlReader.readString(str)
+
 
 class XmlReader:
     def read(cls, fd):
@@ -471,11 +478,13 @@ class XmlReader:
 
     readString = classmethod(readString)
 
+
 class XmlStringRipper:
     def rip(cls, node):
         return node.data[1:-1]
 
     rip = classmethod(rip)
+
 
 class XmlListRipper:
     def rip(cls, node):
@@ -483,11 +492,14 @@ class XmlListRipper:
 
     rip = classmethod(rip)
 
+
 class XmlDateTimeRipper:
     def rip(cls, node):
-        return datetime.strptime(node.childNodes[0].data[1:-1], iso_fmt)
+        return datetime.datetime.strptime(node.childNodes[0].data[1:-1],
+                        iso_fmt)
 
     rip = classmethod(rip)
+
 
 class XmlPersonRipper:
     def rip(cls, node):
@@ -497,22 +509,25 @@ class XmlPersonRipper:
 
     rip = classmethod(rip)
 
+
 class XmlIssueRipper:
     def rip(cls, node):
         created = XmlRipper.rip(node.childNodes[1].childNodes[1])
-        author  = XmlRipper.rip(node.childNodes[3].childNodes[1])
-        title   = XmlRipper.rip(node.childNodes[5].firstChild)
+        author = XmlRipper.rip(node.childNodes[3].childNodes[1])
+        title = XmlRipper.rip(node.childNodes[5].firstChild)
 
         issue = Issue(None, author, title)
         issue.created = created
-        issue.dirty   = False
+        issue.dirty = False
 
         return issue
 
     rip = classmethod(rip)
 
+
 class XmlIssueSetRipper:
     pass
+
 
 class XmlRipper:
     def rip(cls, node):
@@ -537,31 +552,36 @@ class XmlRipper:
 
 ######################################################################
 
-def write_object(obj, file_descriptor = sys.stdout):
-    XmlWriter.write(XmlBuilder.build(obj), fd = file_descriptor)
+
+def write_object(obj, file_descriptor=sys.stdout):
+    XmlWriter.write(XmlBuilder.build(obj), fd=file_descriptor)
+
 
 def object_to_string(obj):
     buffer = StringIO()
-    XmlWriter.write(XmlBuilder.build(obj), fd = buffer)
+    XmlWriter.write(XmlBuilder.build(obj), fd=buffer)
     return buffer.getvalue()
 
+
 class XmlWriter:
-    def write(cls, doc, no_header = False, fd = sys.stdout):
+    def write(cls, doc, no_header=False, fd=sys.stdout):
         if no_header:
             buffer = StringIO()
-            buffer.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+            buffer.write(doc.toprettyxml(indent="", encoding="utf-8"))
             fd.write(re.sub('^.+\n', '', buffer.getvalue()))
         else:
-            fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+            fd.write(doc.toprettyxml(indent="", encoding="utf-8"))
         doc.unlink()
 
     write = classmethod(write)
+
 
 class XmlStringBuilder:
     def build(cls, data, node, doc):
         node.appendChild(doc.createTextNode(data))
 
     build = classmethod(build)
+
 
 class XmlListBuilder:
     def build(cls, data, node, doc):
@@ -572,6 +592,7 @@ class XmlListBuilder:
 
     build = classmethod(build)
 
+
 class XmlDateTimeBuilder:
     def build(cls, data, node, doc):
         element = doc.createElement("datetime")
@@ -579,6 +600,7 @@ class XmlDateTimeBuilder:
         node.appendChild(element)
 
     build = classmethod(build)
+
 
 class XmlPersonBuilder:
     def build(cls, data, node, doc):
@@ -595,6 +617,7 @@ class XmlPersonBuilder:
         node.appendChild(person)
 
     build = classmethod(build)
+
 
 class XmlIssueBuilder:
     def build(cls, issue, node, doc):
@@ -680,6 +703,7 @@ class XmlIssueBuilder:
 
     build = classmethod(build)
 
+
 class XmlCommentBuilder:
     def build(cls, comment, node, doc):
         commentNode = doc.createElement("comment")
@@ -723,6 +747,7 @@ class XmlCommentBuilder:
 #        node.appendChild(changes)
 #
 #    build = classmethod(build)
+
 
 class XmlIssueSetBuilder:
     def build(cls, issueSet, node, doc):
@@ -772,8 +797,9 @@ class XmlIssueSetBuilder:
 
     build = classmethod(build)
 
+
 class XmlBuilder:
-    def build(cls, data, node = None, doc = None):
+    def build(cls, data, node=None, doc=None):
         if data is None:
             pass
         elif isinstance(data, datetime):
@@ -810,6 +836,7 @@ class XmlBuilder:
 
 ######################################################################
 
+
 class GitIssue(Issue):
     def get_name(self):
         if not self.name:
@@ -819,15 +846,17 @@ class GitIssue(Issue):
             self.name = name
         return self.name
 
+
 class GitComment(Comment):
     def get_name(self):
         if not self.name:
             hash_func = self.issue.issueSet.shelf.hash_blob
-            name = hash_func(str(self.created) 
-                             + str(self.author) 
+            name = hash_func(str(self.created)
+                             + str(self.author)
                              + self.comment)
             self.name = name
         return self.name
+
 
 class xml_gitbook(gitshelve.gitbook):
     def serialize_data(self, data):
@@ -836,14 +865,15 @@ class xml_gitbook(gitshelve.gitbook):
     def deserialize_data(self, data):
         return object_from_string(data)
 
+
 class GitIssueSet(IssueSet):
     """This object implements all the command necessary to interact with Git
     for the purpose of storing and distributing issues."""
     def __init__(self):
-        self.GIT_DIR    = None
+        self.GIT_DIR = None
         self.GIT_AUTHOR = None
         IssueSet.__init__(self, gitshelve.open('issues',
-                                               book_type = xml_gitbook))
+                                               book_type=xml_gitbook))
 
     def git_directory(self):
         if self.GIT_DIR is None:
@@ -851,7 +881,7 @@ class GitIssueSet(IssueSet):
         return self.GIT_DIR
 
     def issues_cache_file(self):
-        return join(self.git_directory(), "issues")
+        return os.path.join(self.git_directory(), "issues")
 
     def current_author(self):
         if self.GIT_AUTHOR is None:
@@ -864,10 +894,11 @@ class GitIssueSet(IssueSet):
 
     def allocate_comment(self, issue, commentText):
         return GitComment(issue, self.current_author(), commentText)
-        
+
 ######################################################################
 
-def format_long_text(text, indent = 13):
+
+def format_long_text(text, indent=13):
     if not text:
         return "<none>"
 
@@ -884,7 +915,8 @@ def format_long_text(text, indent = 13):
 
     return buffer.getvalue()
 
-def format_people_list(people, indent = 13):
+
+def format_people_list(people, indent=13):
     if not people:
         return "<no one yet>"
 
@@ -899,18 +931,21 @@ def format_people_list(people, indent = 13):
 
     return buffer.getvalue()
 
+
 def terminal_width():
     """Return terminal width."""
     width = 0
     try:
-        import struct, fcntl, termios
+        import struct
+        import fcntl
+        import termios
         s = struct.pack('HHHH', 0, 0, 0, 0)
         x = fcntl.ioctl(1, termios.TIOCGWINSZ, s)
         width = struct.unpack('HHHH', x)[1]
     except:
         pass
     if width <= 0:
-        if os.environ.has_key("COLUMNS"):
+        if "COLUMNS" in os.environ:
             width = int(os.getenv("COLUMNS"))
         if width <= 0:
             width = 80
@@ -918,7 +953,8 @@ def terminal_width():
 
 ######################################################################
 
-parser = optparse.OptionParser(usage="""Usage: git-issues [options] <command> [command-options]
+parser = optparse.OptionParser(usage=\
+"""Usage: git-issues [options] <command> [command-options]
 
 Commands:
   init        Creates a copy of git-issues repository in .gitissues in the
@@ -931,33 +967,33 @@ Commands:
   comment     Add a comment to the given ticket
   close       Close the given ticket""")
 parser.add_option("-v", "--verbose",
-                  action  = "store_true",
-                  dest    = "verbose",
-                  default = False,
-                  help    = "report activity options.verbosely")
+                  action="store_true",
+                  dest="verbose",
+                  default=False,
+                  help="report activity options.verbosely")
 
-parser.add_option("--print-new-bugs", 
-                  action = "store_true",
-                  dest = "printNewBugs",
-                  default = False,
-                  help = "prints out a formatted string with the bug summary and id. Usuful for in editor usage.")
+parser.add_option("--print-new-bugs",
+                  action="store_true",
+                  dest="printNewBugs",
+                  default=False,
+                  help="prints out a formatted string with the bug summary and id. Usuful for in editor usage.")
 
 parser.add_option("--filter-status",
                   dest="filterStatus",
                   default="closed",
-                  help = """do not print a issue if it is in one of 
-the stati specified (column separated) by this option.""".replace("\n",""))
+                  help="""do not print a issue if it is in one of
+the stati specified (column separated) by this option.""".replace("\n", ""))
 
 parser.add_option("--filter-tags",
                   dest="filterTags",
                   default="",
-                  help = """Prints only the issues with one of the following
+                  help="""Prints only the issues with one of the following
 tags (column separated) associated to it.""")
 
 parser.add_option("--screen-width",
                   dest="screenWidth",
                   default=terminal_width(),
-                  help = "Width of the terminal we are printing to.")
+                  help="Width of the terminal we are printing to.")
 
 parser.add_option("--status",
                   dest="status",
@@ -973,17 +1009,17 @@ gitshelve.verbose = options.verbose
 ######################################################################
 
 def inputFromEditor(originalText):
-    fd, tempFile = mkstemp()
-    f = open(tempFile,"w")
+    fd, tempFile = tempfile.mkstemp()
+    f = open(tempFile, "w")
     f.write(originalText or "")
     f.close()
 
     defaultEditor = "vi"
     if platform.system() == "Windows":
         defaultEditor = "notepad"
-    if os.environ.has_key("VISUAL"):
+    if "VISUAL" in os.environ:
         defaultEditor = os.getenv("VISUAL")
-    elif os.environ.has_key("EDITOR"):
+    elif "EDITOR" in os.environ:
         defualtEditor = os.getenv("EDITOR")
     editCommand = "%s %s" % (defaultEditor, tempFile)
     if os.system(editCommand) != 0:
@@ -1001,7 +1037,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     command = args[0]
-    args    = args[1:]
+    args = args[1:]
 
 ######################################################################
 
@@ -1013,27 +1049,24 @@ if __name__ == '__main__':
 ######################################################################
 
     if command == "init":
-        from os.path import split, join, exists, dirname
-        from os import getcwd, makedirs
-        from shutil import copy
-        path = getcwd()
-        while not exists(join(path,".git")):
-            path,extra = split(path)
+        path = os.getcwd()
+        while not os.path.exists(os.path.join(path, ".git")):
+            path, extra = os.path.split(path)
             if not extra:
                 print "Unable to find a git repository. "
                 print "Make sure you ran `git init` at some point."
                 sys.exit(1)
-        issuesdir = join(path,".gitissues")
-        if exists(issuesdir):
+        issuesdir = os.path.join(path, ".gitissues")
+        if os.path.exists(issuesdir):
             print "git-issues helper directory %s already exists." % issuesdir
             print "Doing nothing."
             sys.exit(1)
-        makedirs(issuesdir)
+        os.makedirs(issuesdir)
         copy(__file__, issuesdir)
-        copy(join(dirname(__file__), "gitshelve.py"), issuesdir)
-        copy(join(dirname(__file__), "t_gitshelve.py"), issuesdir)
-        copy(join(dirname(__file__), "README"), issuesdir)
-        copy(join(dirname(__file__), "LICENSE"), issuesdir)
+        copy(os.path.join(os.path.dirname(__file__), "gitshelve.py"), issuesdir)
+        copy(os.path.join(os.path.dirname(__file__), "t_gitshelve.py"), issuesdir)
+        copy(os.path.join(os.path.dirname(__file__), "README"), issuesdir)
+        copy(os.path.join(os.path.dirname(__file__), "LICENSE"), issuesdir)
         sys.exit(0)
 
 ######################################################################
@@ -1043,11 +1076,11 @@ if __name__ == '__main__':
         width = int(options.screenWidth)
         titleWidth = width - len(header) + 2
         print header % "".join([" " for x in xrange(titleWidth)])
-        print "".join (["-" for x in xrange(width)])
+        print "".join(["-" for x in xrange(width)])
 
         index = 1
         filteredStati = options.filterStatus.split(":")
-        wantedTags = dict([(tag,1) for tag in options.filterTags.split(":") if tag])
+        wantedTags = dict([(tag, 1) for tag in options.filterTags.split(":") if tag])
 
         for item in issueSet.shelf.iteritems():
             if "comment" in item[0]:
@@ -1056,12 +1089,14 @@ if __name__ == '__main__':
             if issue.status in filteredStati:
                 continue
             if wantedTags and not issue.tags:
-              continue
-            if wantedTags:
-              matchingTags = [tag for tag in issue.tags.split(", ") if wantedTags.has_key(tag)]
-              if not matchingTags:
                 continue
-            formatString = "%4d  %s  %-" + str(titleWidth+len("Title")-1) + "s %-6s %5s %6s %s"
+            if wantedTags:
+                matchingTags = [tag for tag in issue.tags.split(", ")
+                    if tag in wantedTags]
+                if not matchingTags:
+                    continue
+            formatString = "%4d  %s  %-" + str(titleWidth + len("Title") - 1) + \
+                "s %-6s %5s %6s %s"
             print formatString % \
                 (index, issue.name[:7], issue.title, issue.status,
                  issue.created and issue.created.strftime('%m/%d'),
@@ -1136,11 +1171,11 @@ if __name__ == '__main__':
             # jww (2008-05-13): Need to parse datetime, lists, and people
             method = getattr(issue, "set_" + args[1])
             try:
-              method(args[2])
-            except IndexError,e:
-              print "Index error."
-              print args
-              sys.exit(1)
+                method(args[2])
+            except IndexError, e:
+                print "Index error."
+                print args
+                sys.exit(1)
 ######################################################################
 
     elif command == "edit":
@@ -1150,20 +1185,20 @@ if __name__ == '__main__':
         else:
             issue = issueSet[args[0]]
             if len(args) != 2:
-              print "Usage: %s edit <issue-id> <field>" % sys.argv[0]
-              sys.exit(1)
+                print "Usage: %s edit <issue-id> <field>" % sys.argv[0]
+                sys.exit(1)
             if not sys.stdin.isatty():
-              contents = sys.stdin.read()
+                contents = sys.stdin.read()
             else:
-              cmd = args[1].lower()
-              contents = inputFromEditor(getattr(issue, cmd))
-            getattr(issue, "set_"+cmd)(contents)
+                cmd = args[1].lower()
+                contents = inputFromEditor(getattr(issue, cmd))
+            getattr(issue, "set_" + cmd)(contents)
 
 ######################################################################
 
     elif command == "close":
         if len(args) == 0:
-            print "Usage: %s close <issue-id>" % basename(sys.argv[0])
+            print "Usage: %s close <issue-id>" % os.path.basename(sys.argv[0])
             sys.exit(1)
         issue = issueSet[args[0]]
         issue.set_status("closed")

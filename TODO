@@ -1,0 +1,40 @@
+Traceback (most recent call last):
+  File "/home/matej/projekty/git-issues/git-issues", line 1201, in <module>
+    issueSet.save_state()
+  File "/home/matej/projekty/git-issues/git-issues", line 431, in save_state
+    self.shelf.sync()
+  File "/home/matej/archiv/2012/projekty/git-issues/gitshelve.py", line 363, in sync
+    self.commit()
+  File "/home/matej/archiv/2012/projekty/git-issues/gitshelve.py", line 354, in commit
+    tree = self.make_tree(self.objects, accumulator)
+  File "/home/matej/archiv/2012/projekty/git-issues/gitshelve.py", line 320, in make_tree
+    tree_name = self.make_tree(obj, comment_accumulator)
+  File "/home/matej/archiv/2012/projekty/git-issues/gitshelve.py", line 320, in make_tree
+    tree_name = self.make_tree(obj, comment_accumulator)
+  File "/home/matej/archiv/2012/projekty/git-issues/gitshelve.py", line 309, in make_tree
+    book.name  = self.make_blob(book.serialize_data(book.data))
+  File "/home/matej/projekty/git-issues/git-issues", line 834, in serialize_data
+    return object_to_string(data)
+  File "/home/matej/projekty/git-issues/git-issues", line 545, in object_to_string
+    XmlWriter.write(XmlBuilder.build(obj), fd = buffer)
+  File "/home/matej/projekty/git-issues/git-issues", line 555, in write
+    fd.write(doc.toprettyxml(indent = "", encoding = "utf-8"))
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 59, in toprettyxml
+    self.writexml(writer, "", indent, newl, encoding)
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 1746, in writexml
+    node.writexml(writer, indent, addindent, newl)
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 821, in writexml
+    node.writexml(writer,indent+addindent,addindent,newl)
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 821, in writexml
+    node.writexml(writer,indent+addindent,addindent,newl)
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 821, in writexml
+    node.writexml(writer,indent+addindent,addindent,newl)
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 821, in writexml
+    node.writexml(writer,indent+addindent,addindent,newl)
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 1042, in writexml
+    _write_data(writer, "%s%s%s"%(indent, self.data, newl))
+  File "/usr/lib64/python2.7/site-packages/_xmlplus/dom/minidom.py", line 306, in _write_data
+    writer.write(data)
+  File "/usr/lib64/python2.7/codecs.py", line 351, in write
+    data, consumed = self.encode(object, self.errors)
+UnicodeDecodeError: 'ascii' codec can't decode byte 0xc4 in position 3: ordinal not in range(128)

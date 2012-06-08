@@ -39,7 +39,7 @@ class t_gitshelve(unittest.TestCase):
         self.assertRaises(exceptions.KeyError, foo1, shelf)
 
         del shelf
- 
+
     def testBasicDeletion(self):
         shelf = gitshelve.open('test')
         text = "Hello, this is a test\n"
@@ -98,7 +98,7 @@ class t_gitshelve(unittest.TestCase):
 
         del shelf
         shelf = gitshelve.open('test')
-        
+
         self.assertEqual("""tree ca37be3e31987d8ece35001301c0b8f1fccbb888
   tree 95b790693f3b5934c63d10b8b007e4758f6134a9: foo
     tree c03cdd65fa74c272bed2e9a48e3ed19402576e19: bar
