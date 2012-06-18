@@ -22,7 +22,7 @@ import re
 import optparse
 import tempfile
 import cPickle
-import datetime
+from datetime import datetime
 
 import gitshelve
 
@@ -92,14 +92,14 @@ class Comment:
         self.issue = issue
         self.author = author
         self.comment = comment
-        self.created = datetime.datetime.now()
+        self.created = datetime.now()
         self.modified = None
         self.self_dirty = True
         self.attachments = []   # records filename and blob
         self.issue.comments[self.get_name()] = self  # register into issue
 
     def mark_dirty(self):
-        self.modified = datetime.datetime.now()
+        self.modified = datetime.now()
         self.self_dirty = True
         self.issue.mark_dirty(self_dirty=False)
 
@@ -149,7 +149,7 @@ class Issue:
         self.severity = severity
         self.priority = priority
         self.tags = tags
-        self.created = datetime.datetime.now()
+        self.created = datetime.now()
         self.modified = None
         self.changes = {}
         self.dirty = False
@@ -160,7 +160,7 @@ class Issue:
         self.dirty = True
         if self_dirty:
             self.self_dirty = True
-            self.modified = datetime.datetime.now()
+            self.modified = datetime.now()
         self.issueSet.mark_dirty(self_dirty=False)
 
     def get_name(self):
@@ -278,13 +278,13 @@ class IssueSet:
         self.dirty = False
         self.self_dirty = True
         self.cache_version = cache_version
-        self.created = datetime.datetime.now()
+        self.created = datetime.now()
         self.modified = None
 
     def mark_dirty(self, self_dirty):
         self.dirty = True
         if self_dirty:
-            self.modified = datetime.datetime.now()
+            self.modified = datetime.now()
             self.self_dirty = True
 
     def current_author(self):
@@ -308,7 +308,7 @@ class IssueSet:
         return "%s/%s/comment_%s_%s_%s.xml" % (name[:2],
                                            name[2:],
                                            comment.name,
-                                           datetime.datetime.now().isoformat(),
+                                           datetime.now().isoformat(),
                                            comment.comment)
 
     def issue_path(self, issue):
@@ -495,7 +495,7 @@ class XmlListRipper:
 
 class XmlDateTimeRipper:
     def rip(cls, node):
-        return datetime.datetime.strptime(node.childNodes[0].data[1:-1],
+        return datetime.strptime(node.childNodes[0].data[1:-1],
                         iso_fmt)
 
     rip = classmethod(rip)
@@ -800,6 +800,7 @@ class XmlIssueSetBuilder:
 
 class XmlBuilder:
     def build(cls, data, node=None, doc=None):
+        print("data = %s" % data)
         if data is None:
             pass
         elif isinstance(data, datetime):
@@ -841,7 +842,7 @@ class GitIssue(Issue):
     def get_name(self):
         if not self.name:
             hash_func = self.issueSet.shelf.hash_blob
-            name = hash_func(str(self.created) + str(self.author) +
+            name = hash_func(unicode(self.created) + unicode(self.author) +
                              self.title)
             self.name = name
         return self.name
@@ -851,8 +852,8 @@ class GitComment(Comment):
     def get_name(self):
         if not self.name:
             hash_func = self.issue.issueSet.shelf.hash_blob
-            name = hash_func(str(self.created)
-                             + str(self.author)
+            name = hash_func(unicode(self.created)
+                             + unicode(self.author)
                              + self.comment)
             self.name = name
         return self.name
@@ -885,8 +886,8 @@ class GitIssueSet(IssueSet):
 
     def current_author(self):
         if self.GIT_AUTHOR is None:
-            self.GIT_AUTHOR = Person(gitshelve.git('config', 'user.name'),
-                                     gitshelve.git('config', 'user.email'))
+            self.GIT_AUTHOR = Person(unicode(gitshelve.git('config', 'user.name'), "utf-8"),
+                                     unicode(gitshelve.git('config', 'user.email'), "utf-8"))
         return self.GIT_AUTHOR
 
     def allocate_issue(self, title):
@@ -1095,12 +1096,12 @@ if __name__ == '__main__':
                     if tag in wantedTags]
                 if not matchingTags:
                     continue
-            formatString = "%4d  %s  %-" + str(titleWidth + len("Title") - 1) + \
+            formatString = "%4d  %s  %-" + unicode(titleWidth + len("Title") - 1) + \
                 "s %-6s %5s %6s %s"
             print formatString % \
                 (index, issue.name[:7], issue.title, issue.status,
                  issue.created and issue.created.strftime('%m/%d'),
-                 str(issue.author)[:6], '')
+                 unicode(issue.author)[:6], '')
             index += 1
 
         print

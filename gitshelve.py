@@ -131,9 +131,9 @@ def git(cmd, *args, **kwargs):
 
     if not 'ignore_output' in kwargs:
         if 'keep_newline' in kwargs:
-            return out
+            return unicode(out, "utf-8")
         else:
-            return out[:-1]
+            return unicode(out[:-1], "utf-8")
 
 
 class gitbook:
