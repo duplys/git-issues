@@ -82,8 +82,8 @@ class Person:
         self.name = name
         self.email = email
 
-    def __str__(self):
-        return "%s <%s>" % (self.name, self.email)
+    def __unicode__(self):
+        return u"%s <%s>" % (self.name, self.email)
 
 
 class Comment:
@@ -800,7 +800,6 @@ class XmlIssueSetBuilder:
 
 class XmlBuilder:
     def build(cls, data, node=None, doc=None):
-        print("data = %s" % data)
         if data is None:
             pass
         elif isinstance(data, datetime):
@@ -886,8 +885,8 @@ class GitIssueSet(IssueSet):
 
     def current_author(self):
         if self.GIT_AUTHOR is None:
-            self.GIT_AUTHOR = Person(unicode(gitshelve.git('config', 'user.name'), "utf-8"),
-                                     unicode(gitshelve.git('config', 'user.email'), "utf-8"))
+            self.GIT_AUTHOR = Person(gitshelve.git('config', 'user.name'),
+                                     gitshelve.git('config', 'user.email'))
         return self.GIT_AUTHOR
 
     def allocate_issue(self, title):

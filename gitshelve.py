@@ -65,12 +65,12 @@ class GitError(Exception):
         self.stderr = stderr
         Exception.__init__(self)
 
-    def __str__(self):
+    def __unicode__(self):
         if self.stderr:
-            return "Git command failed: git %s %s: %s" % \
+            return u"Git command failed: git %s %s: %s" % \
                 (self.cmd, self.args, self.stderr)
         else:
-            return "Git command failed: git %s %s" % (self.cmd, self.args)
+            return u"Git command failed: git %s %s" % (self.cmd, self.args)
 
 
 def git(cmd, *args, **kwargs):
@@ -117,6 +117,8 @@ def git(cmd, *args, **kwargs):
         else:
             input = ''
 
+        if isinstance(input, unicode):
+            input = input.encode("utf-8")
         out, err = proc.communicate(input)
 
         returncode = proc.returncode
