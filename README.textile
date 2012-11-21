@@ -1,5 +1,3 @@
-*NOTE: This project is not being actively developed, and is looking for a new maintainer.  Contact me if you are interested.*
-
 This script implements distributed bug tracking for Git repositories.  It
 replicates the functionality of packages like ticgit, but does so in the form
 of a more standalone Python script.  You can check this script in along with
