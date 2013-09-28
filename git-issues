@@ -1036,6 +1036,14 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit(1)
 
+    path = os.getcwd()
+    while not os.path.exists(os.path.join(path, ".git")):
+        path, extra = os.path.split(path)
+        if not extra:
+            print "Unable to find a git repository. "
+            print "Make sure you ran `git init` at some point."
+            sys.exit(1)
+
     command = args[0]
     args = args[1:]
 
@@ -1049,13 +1057,6 @@ if __name__ == '__main__':
 ######################################################################
 
     if command == "init":
-        path = os.getcwd()
-        while not os.path.exists(os.path.join(path, ".git")):
-            path, extra = os.path.split(path)
-            if not extra:
-                print "Unable to find a git repository. "
-                print "Make sure you ran `git init` at some point."
-                sys.exit(1)
         issuesdir = os.path.join(path, ".gitissues")
         if os.path.exists(issuesdir):
             print "git-issues helper directory %s already exists." % issuesdir
