@@ -85,6 +85,9 @@ class Person:
     def __unicode__(self):
         return u"%s <%s>" % (self.name, self.email)
 
+    def __str__(self):
+        return self.__unicode__()
+
 
 class Comment:
     def __init__(self, issue, author, comment):
