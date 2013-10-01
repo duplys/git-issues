@@ -85,6 +85,9 @@ class Person:
     def __unicode__(self):
         return u"%s <%s>" % (self.name, self.email)
 
+    def __str__(self):
+        return self.__unicode__()
+
 
 class Comment:
     def __init__(self, issue, author, comment):
@@ -1036,6 +1039,14 @@ if __name__ == '__main__':
         parser.print_help()
         sys.exit(1)
 
+    path = os.getcwd()
+    while not os.path.exists(os.path.join(path, ".git")):
+        path, extra = os.path.split(path)
+        if not extra:
+            print "Unable to find a git repository. "
+            print "Make sure you ran `git init` at some point."
+            sys.exit(1)
+
     command = args[0]
     args = args[1:]
 
@@ -1049,13 +1060,6 @@ if __name__ == '__main__':
 ######################################################################
 
     if command == "init":
-        path = os.getcwd()
-        while not os.path.exists(os.path.join(path, ".git")):
-            path, extra = os.path.split(path)
-            if not extra:
-                print "Unable to find a git repository. "
-                print "Make sure you ran `git init` at some point."
-                sys.exit(1)
         issuesdir = os.path.join(path, ".gitissues")
         if os.path.exists(issuesdir):
             print "git-issues helper directory %s already exists." % issuesdir
@@ -1163,7 +1167,7 @@ if __name__ == '__main__':
 ######################################################################
 
     elif command == "change":
-        if len(args) == 0:
+        if len(args) < 3:
             print "Usage: %s change <issue-id> <field> <value>" % sys.argv[0]
         else:
             issue = issueSet[args[0]]
@@ -1218,7 +1222,7 @@ if __name__ == '__main__':
             if options.printNewBugs:
                 print "%s: %s (%s)" % (issue.status, issue.title, issue.name[0:7])
     elif command == "comment":
-        if len(args) == 0:
+        if len(args) < 2:
             print "Usage: %s comment <issue-id> <comment-title>" % sys.argv[0]
             sys.exit(1)
         issue = issueSet[args[0]]
