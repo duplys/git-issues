@@ -71,6 +71,8 @@ class GitError(Exception):
                 (self.cmd, self.args, self.stderr)
         else:
             return u"Git command failed: git %s %s" % (self.cmd, self.args)
+    def __str__(self):
+        return self.__unicode__()
 
 
 def git(cmd, *args, **kwargs):

@@ -873,9 +873,12 @@ class GitIssueSet(IssueSet):
     """This object implements all the command necessary to interact with Git
     for the purpose of storing and distributing issues."""
     def __init__(self):
+        self.branch = gitshelve.git('config', 'issues.branch', ignore_errors=True)
+        if '' == self.branch:
+            self.branch = 'issues'
         self.GIT_DIR = None
         self.GIT_AUTHOR = None
-        IssueSet.__init__(self, gitshelve.open('issues',
+        IssueSet.__init__(self, gitshelve.open(self.branch,
                                                book_type=xml_gitbook))
 
     def git_directory(self):
