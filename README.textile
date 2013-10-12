@@ -21,7 +21,8 @@ git issues close ID  # mark an issue as closed
 
 h1. Data Structure
 
-The data for @git-issues@ is kept in a separate branch named @issues@.  The
+The data for @git-issues@ is kept in a separate branch configured through
+the issues.branch option. By default the branch is named @issues@.  The
 user is never intended to checkout this branch, it's used solely for record
 keeping by the @git-issues@ script.
 
