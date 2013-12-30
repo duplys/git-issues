@@ -1026,7 +1026,7 @@ def inputFromEditor(originalText):
     if "VISUAL" in os.environ:
         defaultEditor = os.getenv("VISUAL")
     elif "EDITOR" in os.environ:
-        defualtEditor = os.getenv("EDITOR")
+        defaultEditor = os.getenv("EDITOR")
     editCommand = "%s %s" % (defaultEditor, tempFile)
     if os.system(editCommand) != 0:
         os.unlink(tempFile)
